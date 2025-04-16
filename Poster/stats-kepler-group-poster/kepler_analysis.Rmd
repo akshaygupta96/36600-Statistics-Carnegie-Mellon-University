@@ -1,0 +1,452 @@
+---
+title: "Kepler Group Poster Project"
+author: "Sashank Yalavarthy, Javier Abollado, Marius Nwobi, Erick Cohen. Alekhya Vittalam, Akshay Gupta"
+date: "2024-12-10"
+output: html_document
+---
+
+Our team got the [Keplr Dataset](https://exoplanetarchive.ipac.caltech.edu/docs/API_kepcandidate_columns.html).
+
+```{r setup, include=TRUE}
+# Load necessary libraries
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+  library(randomForest)
+  library(pROC)
+  library(bestglm)
+})
+
+theme_set(theme_light())
+
+# constants
+PATH_TO_KEPLR_DATASET <- "data/kepler.csv"
+RANDOM_SEED <- 101
+```
+
+# Read data 
+
+```{r}
+set.seed(RANDOM_SEED)
+df <- read.csv(PATH_TO_KEPLR_DATASET, stringsAsFactors = TRUE)
+dim(df)
+summary(df)
+```
+
+## Check Nan values
+
+```{r}
+colSums(is.na(df))
+```
+
+there are none.
+
+## Check data distribution
+
+```{r}
+df %>% 
+  select(-label) %>%
+  gather(key = "variable", value = "value") %>%
+  ggplot(aes(x = value)) +
+  facet_wrap(~ variable, scales = "free") +
+  geom_histogram(bins = 30, color = "black", fill = "deepskyblue") +
+  labs(title = "Histograms of features")
+```
+
+# Transform skewed variable [transformation options](https://canvas.cmu.edu/courses/41696/files/11682844?module_item_id=5942604).
+
+Many of the features are skewed in different directions. We will apply transformations to make them more normally distributed.
+
+The following have right skews that we will transform via `1 / log(x)`:
+- koi_depth
+- koi_dor
+- koi_duration
+- koi_impact
+- koi_insol
+- koi_prad
+- koi_ror
+- koi_srad
+- koi_srho
+- koi_teq
+
+The following have right skews that we will transform via `log(x)`
+- koi_period
+
+The following have left skews we will transform via `x^4`
+
+- koi_incl
+- koi_slogg
+
+
+```{r}
+# create transformation functions
+transform_one_over_log <- function(df, vars) {
+  df %>% 
+    mutate(
+      across(
+        all_of(vars), ~ 1 / (1+log(.)) , .names = "{.col}_t"
+        )
+      ) %>% 
+    select(-all_of(vars))
+}
+
+transform_log <- function(df, vars) {
+  df %>% 
+    mutate(
+      across(
+        all_of(vars), ~ log(.), .names = "{.col}_t"
+        )
+      ) %>% 
+    select(-all_of(vars))
+}
+
+transform_fourth_power <- function(df, vars) {
+  df %>% 
+    mutate(
+      across(
+        all_of(vars), ~ (.) ^ 4 , .names = "{.col}_t"
+        )
+      ) %>% 
+    select(-all_of(vars))
+}
+
+# create vector of columns for each transformation
+columns_to_transform_one_over_log <- c(
+  "koi_depth", 
+  "koi_dor",
+  "koi_duration",
+  "koi_impact",
+  "koi_insol",
+  "koi_prad",
+  "koi_ror",
+  "koi_srad",
+  "koi_srho",
+  "koi_teq"
+  )
+
+columns_to_transform_log <- c(
+  "koi_period"
+)
+
+columns_to_transform_fourth_power <- c(
+  "koi_incl",
+  "koi_slogg"
+)
+
+# Apply the transformations
+df_transformed <- 
+  transform_one_over_log(
+    df, 
+    columns_to_transform_one_over_log
+    )
+
+df_transformed <- 
+  transform_fourth_power(
+    df_transformed, 
+    columns_to_transform_fourth_power
+    )
+
+df <- 
+  transform_log(
+    df_transformed, 
+    columns_to_transform_log
+    )
+
+```
+
+```{r}
+df %>% 
+  select(-label) %>%
+  gather(key = "variable", value = "value") %>%
+  ggplot(aes(x = value)) +
+  facet_wrap(~ variable, scales = "free") +
+  geom_histogram(bins = 30, color = "black", fill = "deepskyblue") +
+  labs(title = "Histograms of features")
+```
+
+
+
+```{r}
+df %>%
+  gather(key = "variable", value = "value", -label) %>%
+  ggplot(aes(x = label, y = value)) +
+  facet_wrap(~ variable, scales = "free") +
+  geom_boxplot()
+```
+
+**Note:** our data is extremely skewed. 
+
+```{r}
+# Plot bar chart for target
+df %>% select(label) %>%
+  gather(key = "variable", value = "value") %>%
+  ggplot(aes(x = value, fill = variable)) +
+  facet_wrap(~ variable, scales = "free") +
+  geom_bar(color = "black") +
+  labs(title = "Target values") +
+  theme(legend.position = "none")
+```
+
+# Pipeline for results
+
+```{r}
+
+TABLE <- list(
+  model_name = c(),
+  accuracy = c(), 
+  precision = c(), 
+  recall = c(), 
+  f1 = c(),
+  auc = c(),
+  threshold = c()
+)
+
+get_scores <- function(true, prob=NULL, is_prob=TRUE, predictions=NULL, best_th=TRUE){
+  
+  if (is_prob){
+    roc_curve <- roc(true, prob, levels = c(0, 1), direction = "<")
+    threshold <- ifelse(best_th, as.numeric(coords(roc_curve, "best", ret = "threshold",  best.method = "youden")), 0.5)
+    pred <- as.numeric(ifelse(prob > threshold, 1, 0))
+    auc_score <- auc(roc_curve)
+  }
+  else {
+    pred = predictions
+    auc_score = NULL
+    threshold = NULL
+  }
+  
+  # Confusion matrix components
+  tp <- sum(pred == 1 & true == 1)  # True Positives
+  tn <- sum(pred == 0 & true == 0)  # True Negatives
+  fp <- sum(pred == 1 & true == 0)  # False Positives
+  fn <- sum(pred == 0 & true == 1)  # False Negatives
+  
+  # Metrics
+  accuracy <- (tp + tn) / length(true)
+  precision <- tp / (tp + fp)
+  recall <- tp / (tp + fn)
+  f1 <- 2 * (precision * recall) / (precision + recall)
+  
+  # Print results
+  cat("Accuracy:", accuracy, "\n")
+  cat("Precision:", precision, "\n")
+  cat("Recall:", recall, "\n")
+  cat("F1-score:", f1, "\n")
+  cat("AUC:", auc_score, "\n")
+  return (c(accuracy, precision, recall, f1, auc_score, threshold))
+}
+
+save_scores <- function(model_name, results){
+  TABLE$model_name <<- c(TABLE$model_name, model_name)
+  TABLE$accuracy <<- c(TABLE$accuracy, results[1])
+  TABLE$precision <<- c(TABLE$precision, results[2])
+  TABLE$recall <<- c(TABLE$recall, results[3])
+  TABLE$f1 <<- c(TABLE$f1, results[4])
+  TABLE$auc <<- c(TABLE$auc, results[5])
+  TABLE$threshold <<- c(TABLE$threshold, results[6])
+}
+
+see <- function(){
+  return (data.frame(TABLE))
+}
+```
+
+# Modeling
+
+```{r}
+set.seed(42)
+s <- sample(seq_len(nrow(df)), size = as.integer(0.7*nrow(df)))
+
+# Train-Test Split
+df$label <- factor(ifelse(df$label == "CONFIRMED", 1, 0))
+df.train <- df[s, ]
+df.test <- df[-s, ]
+
+df.test <- select(df.test, -koi_eccen)
+df.train <- select(df.train, -koi_eccen)
+```
+
+## Best Subset Selection
+
+```{r}
+suppressMessages(library(car))
+#
+## VIF to find multi-collinearity
+#vif(glm(label~., data=df.train, family = "binomial"))
+#
+## Dropping highly multi-collinear variables
+#df.mod <- df.train %>% select(-koi_srad, -koi_smass, -koi_ror, -koi_dor)
+#
+## Both function calls give me infinite loops because there's no convergence. Maybe cos of the skewed predictors or the response not being balanced?
+#bg.aic <- bestglm(df.train, family = binomial, IC="AIC")
+#bg.bic <- bestglm(df.mod, family = binomial, IC="BIC")
+#bg.aic$BestModel
+```
+
+
+## Logistic Regression
+
+```{r}
+lg_model <- glm(label ~ ., data = df.train, family = "binomial")
+
+prob_lr <- as.numeric(predict(lg_model, df.test))
+# pred <- ifelse(prob > 0.5, 1, 0)
+results <- get_scores(df.test$label, prob_lr)
+save_scores("Logistic Regression", results)
+```
+
+## Random Forest
+
+```{r}
+set.seed(42)
+
+rf_model <- randomForest(label ~ ., data = df.train, importance=TRUE)
+
+prob_rf <- as.numeric(predict(rf_model, df.test, type = "prob")[,2])
+# pred <- ifelse(prob > 0.5, 1, 0)
+
+results <- get_scores(df.test$label, prob_rf)
+save_scores("Random Forest", results)
+```
+
+## Support Vector Machine (SVM)
+
+```{r}
+library(e1071)
+
+set.seed(42)
+
+svm_model <- svm(label ~ ., data = df.train, probability = TRUE)
+
+prob_svm <- attr(predict(svm_model, df.test, probability = TRUE), "probabilities")[,2]
+# pred <- ifelse(prob > 0.5, 1, 0)
+
+results <- get_scores(df.test$label, prob_svm)
+save_scores("Support Vector Machine", results)
+```
+
+
+## K-Nearest Neighbors (KNN)
+
+```{r}
+library(class)
+
+set.seed(42)
+
+# Scale data for KNN
+train_scaled <- scale(select(df.train, -label))
+test_scaled <- scale(select(df.test, -label), center = attr(train_scaled, "scaled:center"), scale = attr(train_scaled, "scaled:scale"))
+
+knn_indices <- knn(train_scaled, test_scaled, cl = df.train$label, k = 5, prob = TRUE)
+prob_knn <- attr(knn_indices, "prob")
+prob_knn <- ifelse(knn_indices == "1", prob_knn, 1 - prob_knn)
+
+results <- get_scores(df.test$label, prob_knn)
+save_scores("K-Nearest Neighbors", results)
+```
+
+
+## Gradient Boosting (GBM)
+
+```{r}
+library(gbm)
+
+set.seed(42)
+
+df.train$label <- as.numeric(df.train$label) - 1
+df.test$label <- as.numeric(df.test$label) - 1
+
+gbm_model <- gbm(label ~ ., data = df.train, distribution = "bernoulli", n.trees = 100, interaction.depth = 3, shrinkage = 0.01, cv.folds = 5)
+
+prob_gbm <- predict(gbm_model, df.test, n.trees = gbm_model$n.trees, type = "response")
+# pred <- ifelse(prob > 0.5, 1, 0)
+
+results <- get_scores(df.test$label, prob_gbm)
+save_scores("Gradient Boosting", results)
+```
+
+
+## XGBoost
+
+```{r}
+library(xgboost)
+
+set.seed(42)
+
+# Convert data to DMatrix format
+train_matrix <- xgb.DMatrix(data = as.matrix(select(df.train, -label)), label = df.train$label)
+test_matrix <- xgb.DMatrix(data = as.matrix(select(df.test, -label)), label = df.test$label)
+
+xgb_model <- xgboost(data = train_matrix, max_depth = 6, eta = 0.1, nrounds = 100, objective = "binary:logistic", verbose = 0)
+
+prob_xgb <- predict(xgb_model, test_matrix)
+# pred <- ifelse(prob > 0.5, 1, 0)
+
+results <- get_scores(df.test$label, prob_xgb)
+save_scores("XGBoost", results)
+```
+
+
+
+# Summary of diferent models
+
+```{r}
+results <- see()
+print(results)
+```
+
+# Confusion Matrix with the Best Model and MCR
+```{r}
+best_model <- results[which.max(results$auc),]
+print(best_model)
+
+# Youden's J statistic
+best_threshold <- best_model$threshold
+print(paste("Best threshold:", best_threshold))
+
+# Generate predictions based on best threshold
+best_model_pred <- ifelse(prob_rf > best_threshold, 1, 0)
+
+# Confusion Matrix
+conf_matrix <- table(Predicted = best_model_pred, Actual = df.test$label)
+print("Confusion Matrix")
+print(conf_matrix)
+
+# Misclassification Rate
+mcr <- mean(best_model_pred != df.test$label)
+print(paste("Misclassification Rate (MCR):", mcr))
+
+```
+
+# Variable Importance
+```{r}
+#importance(rf_model)
+varImpPlot(rf_model, 
+           type = 1,  # Mean Decrease Accuracy
+           main = "Variable Importance (Mean Decrease Accuracy)")
+
+```
+
+# Overlay ROC curves
+```{r}
+# Extracting ROC for all models
+lg_roc <- roc(df.test$label, prob_lr, levels = c(0, 1), direction = "<")
+rf_roc <- roc(df.test$label, prob_rf, levels = c(0, 1), direction = "<")
+svm_roc <- roc(df.test$label, prob_svm, levels = c(0, 1), direction = "<")
+knn_roc <- roc(df.test$label, prob_knn, levels = c(0, 1), direction = "<") 
+gbm_roc <- roc(df.test$label, prob_gbm, levels = c(0, 1), direction = "<")
+xgb_roc <- roc(df.test$label, prob_xgb, levels = c(0, 1), direction = "<")
+
+# Plot all ROC curves
+plot(lg_roc, col = "red", main = "ROC Curves for All Models")
+lines(rf_roc, col = "blue")
+lines(svm_roc, col = "green")
+lines(knn_roc, col = "purple")
+lines(gbm_roc, col = "orange")
+lines(xgb_roc, col = "black")
+
+legend("bottomright", legend = c("Logistic Regression", "Random Forest", "SVM", "KNN", "Gradient Boosting", "XGBoost"),
+       col = c("red", "blue", "green", "purple", "orange", "black"), lty = 1)
+
+```
