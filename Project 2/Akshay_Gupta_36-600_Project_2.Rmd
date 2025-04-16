@@ -1,0 +1,406 @@
+---
+title: 'Project 2'
+author: "Akshay_Gupta_36-600_Project_2"
+output:
+  html_document:
+  toc: false
+  theme: spacelab
+---
+
+### Load necessary libraries
+```{r}
+suppressPackageStartupMessages(library(tidyverse))  # For data manipulation
+suppressPackageStartupMessages(library(corrplot))   # For correlation plots
+suppressPackageStartupMessages(library(car))        # For variance inflation factor (VIF) analysis
+suppressPackageStartupMessages(library(leaps))      # For best subset selection
+suppressPackageStartupMessages(library(glmnet))     # For Ridge and LASSO models
+suppressPackageStartupMessages(library(caret))      # For data partitioning and cross-validation
+```
+
+### Load and Inspect the Data stellar_temperature.csv
+```{r}
+star_data <- read.csv("stellar_temperature.csv")
+
+str(star_data)
+summary(star_data)
+colSums(is.na(star_data)) # no 'na' values
+```
+
+### Exploratory Data Analysis (EDA)
+```{r}
+# Visualize outliers in the target variable using a boxplot
+ggplot(star_data, aes(y = teff)) +
+  geom_boxplot(fill = "orange") +
+  labs(title = "Boxplot of teff") +
+  theme_minimal()
+
+# Calculate Q1 (25th percentile) and Q3 (75th percentile)
+Q1 <- quantile(star_data$teff, 0.25)
+Q3 <- quantile(star_data$teff, 0.75)
+
+# Calculate the IQR
+IQR_value <- IQR(star_data$teff)
+
+# Define bounds for identifying outliers
+lower_bound <- Q1 - 1.5 * IQR_value
+upper_bound <- Q3 + 1.5 * IQR_value
+
+# Create a new dataset without outliers
+star_data_no_outliers <- star_data[star_data$teff >= lower_bound & star_data$teff <= upper_bound, ]
+
+# Visualize the boxplot of teff without outliers
+ggplot(star_data_no_outliers, aes(y = teff)) +
+  geom_boxplot(fill = "maroon") +
+  labs(title = "Boxplot of teff (Without Outliers)") +
+  theme_minimal()
+
+# Histogram for teff
+hist(star_data$teff, main = "Histogram of teff", xlab = "teff", breaks = 20, col = "hotpink", border = "black")
+
+# Apply a log transformation to teff for normalization
+log_teff <- log(star_data$teff)
+
+# Histogram for log(teff)
+hist(log_teff, main = "Histogram of log(teff)", xlab = "log(teff)", breaks = 20, col = "deepskyblue", border = "black")
+
+# Generate a correlation plot to visualize relationships between variables
+cor_matrix <- cor(star_data) # Calculate correlation matrix
+corrplot(cor_matrix, method = "circle") # Display correlation plot
+```
+The distribution of the target variable, teff is not normal and is right skewed.
+I applied a log transform on teff to normalize as shown in the plots. But we will use the default data to train our models as the log transformed data is still not normally distributed. I removed some outliers to try and make the data more normally distributed.
+For the correlation plot, strong positive correlations are indicated by dark blue circles such as those involving variables g_mag, b_mag, and r_mag. This suggests these variables are collinear.
+Negative correlations are indicated by dark red circles, such as those involving br_col and teff, indicate strong negative correlations, which could also contribute to multicollinearity if these variables are used together in a model.
+
+### Splitting the Data
+```{r}
+# Set a random seed for reproducibility of results
+set.seed(123) 
+
+# Create a random sample of row indices for the training set
+# The sample size is 70% of the total number of rows in  star_data
+train_index <- sample(seq_len(nrow(star_data)), size = 0.7 * nrow(star_data))
+
+# Create the training data set using the sampled indices
+train_data <- star_data[train_index, ]
+
+# Create the test data set by excluding the training indices from the star_data (30%)
+test_data <- star_data[-train_index, ]
+
+# Print the size of the training set
+cat("Training set size:", nrow(train_data), "\n")
+
+# Print the size of the test set
+cat("Test set size:", nrow(test_data), "\n")
+```
+I did a 70%-30% split for the training and test data since the dataset size is large (10000 rows)
+
+### Analysis with Linear Regression
+```{r}
+# Fit linear regression model using teff as the response variable
+lm_model <- lm(teff ~ . - teff, data = train_data)  # Exclude teff from predictors
+
+# Display model summary
+summary(lm_model)
+
+# Generate predictions for both training and test sets
+train_preds <- predict(lm_model, newdata = train_data)  # Predictions on training data
+test_preds <- predict(lm_model, newdata = test_data)    # Predictions on test data
+
+# Calculate MSE and RMSE for the test set using original teff
+mse <- mean((test_data$teff - test_preds)^2)  # Mean Squared Error
+rmse <- sqrt(mse)  # Root Mean Squared Error
+
+# Print MSE and RMSE values
+print(paste("MSE for the test set:", mse))
+print(paste("RMSE for the test set:", rmse))
+
+# Create a data frame for ggplot
+prediction_data <- data.frame(
+  Observed = test_data$teff,
+  Predicted = test_preds
+)
+
+# Plot Predicted vs Observed values using ggplot
+ggplot(prediction_data, aes(x = Observed, y = Predicted)) +
+  geom_point(alpha = 0.6) +  # Add points with some transparency
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "solid") +  # Diagonal line for perfect prediction
+  labs(title = "Predicted vs Observed teff",
+       x = "Observed teff",
+       y = "Predicted teff") +
+  theme_minimal()
+```
+The linear fit seems to be good, especially between 4000 and 7000 teff. However, the MSE and RSME values of 196969.1 and 443.8 are very high in relation to the teff values. However, we will try Ridge and LASSO modeling to try and get better better models.
+An adjusted R^2 value of 0.6549 is not great, indicating that the linear model explains approximately 65.49% of the variance in the response variable.
+
+### Distribution of Model Residuals
+```{r}
+# Generate predictions on the training data
+preds <- predict(lm_model, newdata = train_data)  # Predictions from the linear model
+
+# Calculate residuals in the original scale
+original_residuals <- train_data$teff - preds
+
+# Ensure residuals are in a data frame
+residuals_df <- data.frame(original_residuals)
+
+# Plotting the histogram of residuals in original scale
+ggplot(data = residuals_df, aes(x = original_residuals)) +
+  geom_histogram(binwidth = 100, fill = "green", color = "black", alpha = 0.7) +
+  labs(title = "Histogram of Residuals (Original Scale)",
+       x = "Residuals (teff)",
+       y = "Frequency") +
+  theme_minimal()
+
+# Calculate the residuals for normality test
+# Perform the K-S test on the original residuals
+ks_test_original <- ks.test(original_residuals, "pnorm", mean = mean(original_residuals), sd = sd(original_residuals))
+print(ks_test_original)
+
+# Interpret the p-value
+if (ks_test_original$p.value < 0.05) {
+  print("Reject the null hypothesis: Residuals are not normally distributed.")
+} else {
+  print("Fail to reject the null hypothesis: Residuals appear to be normally distributed.")
+}
+```
+When I performed a Kolmogorov-Smirnov normality test on residuals with no transformation on the target variable, teff, I rejected the null hypothesis and the residuals were not normally distributed.
+
+### Homoscedasticity vs. Heteroscedasticity (residuals versus the predicted test-set response values)
+```{r}
+# Generate predictions for the test set
+predicted_values <- predict(lm_model, test_data)
+
+# Calculate residuals
+residuals <- test_data$teff - predicted_values
+
+# Create a data frame for plotting
+residuals_df <- data.frame(predicted = predicted_values, residuals = residuals)
+
+# Plot residuals versus predicted values
+ggplot(data = residuals_df, aes(x = predicted, y = residuals)) +
+  geom_point(color = "blue", alpha = 0.5) +
+  labs(title = "Residuals vs. Predicted Values",
+       x = "Predicted Values (teff)",
+       y = "Residuals") +
+  theme_minimal() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red")  # Add horizontal line at y = 0
+```
+The plot of the residuals versus the predicted test-set response values suggests that the variance around the regression line is σ2 and is constant (homoscedasticity). The scatter points hover around y=0.
+The absence of a clear pattern or systematic structure in the residuals suggests that the model fits the data well. If there were patterns, such as curves or trends, it might indicate model inadequacy or a need for transformation.
+
+### Variance Inflation Factors (VIF) to Detect Multicollinearity
+```{r}
+# Check for aliased coefficients in the initial model
+alias_info <- alias(lm_model)  # Assuming lm_model is already defined with teff as response
+print(alias_info)
+
+# Inspect the correlation matrix, excluding 'teff'
+cor_matrix <- cor(train_data[, -which(names(train_data) == "teff")])  # Only exclude teff
+print(cor_matrix)
+
+# Identify highly correlated pairs (greater than 0.75 but not equal to 1)
+high_cor <- which(abs(cor_matrix) > 0.75 & abs(cor_matrix) < 1, arr.ind = TRUE)
+print(high_cor)
+
+# Remove a highly correlated variable (e.g., 'b_mag')
+train_data_reduced <- train_data[, !names(train_data) %in% c("b_mag")]
+
+# Fit the linear model again with the reduced dataset
+lm_model_reduced <- lm(teff ~ ., data = train_data_reduced)
+
+# Check for aliased coefficients again in the reduced model
+alias_info_reduced <- alias(lm_model_reduced)
+print(alias_info_reduced)
+
+# Check VIF for the reduced model
+vif_values <- vif(lm_model_reduced)
+print("VIF values:")
+print(vif_values)
+```
+b_mag, r_mag, and g_mag have strong correlations with each other and have multicollinearity.
+
+### Best-Subset Selection Analysis
+```{r}
+# Perform best subset selection for potential model improvements
+best_subset <- regsubsets(teff ~ ., data = train_data, nvmax = 5)
+subset_summary <- summary(best_subset)
+print(subset_summary)
+```
+### Fitting and MSE Calculation
+```{r}
+# Fit the best model
+best_model_formula <- teff ~ B + br_col + r_mag + pmra + parallax
+best_model <- lm(best_model_formula, data = train_data)
+
+# Make predictions on the test data
+bss_predictions <- predict(best_model, newdata = test_data)
+
+# Calculate MSE
+bss_mse <- mean((test_data$teff - bss_predictions)^2)
+print(paste("MSE for the best subset model:", bss_mse))
+
+# Calculate R^2 for the best model
+bss_r2 <- summary(best_model)$r.squared
+print(paste("R^2 for the best subset model:", bss_r2))
+
+# Fit the full model for comparison
+full_model <- lm(teff ~ ., data = train_data)  # This includes all predictors
+full_predictions <- predict(full_model, newdata = test_data)
+
+# Calculate MSE for the full model
+full_mse <- mean((test_data$teff - full_predictions)^2)
+print(paste("MSE for the full model:", full_mse))
+
+# Calculate R^2 for the full model
+full_r2 <- summary(full_model)$r.squared
+print(paste("R^2 for the full model:", full_r2))
+```
+The full model has a lower MSE value compared to the best subset model. The full model also has a higher R^2 value compared to the best subset model.
+
+### PCA Analysis and Biplot (for Multicollinearity Mitigation)
+```{r}
+# Conduct PCA on predictors, excluding 'teff'
+pca_data_for_analysis <- train_data %>% select(-teff) %>% 
+  select_if(is.numeric)  # Ensure we only use numeric columns
+
+# Check the structure of the data being passed to PCA
+print("Structure of PCA data:")
+print(str(pca_data_for_analysis))
+
+# Scale the training data
+training_means <- colMeans(pca_data_for_analysis)
+training_sds <- apply(pca_data_for_analysis, 2, sd)
+
+pca_data_scaled <- scale(pca_data_for_analysis, center = training_means, scale = training_sds)
+
+# Conduct PCA
+pca_result <- prcomp(pca_data_scaled, scale. = FALSE)  # No need to scale again
+
+# Check PCA results
+summary(pca_result)
+
+# Extract important variables from PC1 and PC2 loadings
+loadings <- abs(pca_result$rotation[, 1:2])
+important_vars <- rownames(loadings)[apply(loadings, 1, max) > 0.5]  # Threshold for selection
+
+# Create a data frame for plotting
+pca_data <- data.frame(PC1 = pca_result$x[, 1], PC2 = pca_result$x[, 2])
+
+# Create the PCA biplot
+pca_plot <- ggplot() +
+  geom_point(data = pca_data, aes(x = PC1, y = PC2), size = 2, alpha = 0.5, color = 'deepskyblue') +  # Increase point size and transparency
+  geom_text(data = pca_result$rotation[important_vars, ], 
+            aes(x = PC1, y = PC2, label = rownames(pca_result$rotation[important_vars, ])), 
+            color = "black", size = 4, nudge_y = 0.02) +  # Nudge labels slightly to avoid overlap
+  geom_segment(data = pca_result$rotation[important_vars, ], 
+               aes(x = 0, y = 0, xend = PC1 * 2, yend = PC2 * 2),  # Scale arrows for visibility
+               arrow = arrow(length = unit(0.2, "inches")), 
+               color = "red") +  # Add arrows for loadings
+  xlim(-10, 10) + ylim(-7.5, 7.5) +
+  ggtitle("PCA Biplot (Top Influential Variables)") +
+  theme_minimal() +  # Use a minimal theme for better aesthetics
+  theme(plot.title = element_text(hjust = 0.5))  # Center the title
+
+# Print the plot to ensure it appears in the output
+print(pca_plot)
+
+# Save the plot with specified dimensions
+ggsave("pca_biplot.png", plot = pca_plot, width = 10, height = 10)
+```
+
+### PCA Regression Analysis
+```{r}
+# No. of PCs to keep
+explained_variance <- summary(pca_result)$importance[2, ]
+cumulative_variance <- cumsum(explained_variance)
+
+# Plot cumulative variance explained
+plot(cumulative_variance, xlab = "Number of Principal Components", 
+     ylab = "Cumulative Variance Explained", type = "b", main = "Cumulative Variance Explained by PCs")
+abline(h = 0.9, col = "red", lty = 2)  # Add a line for 90% threshold
+
+# Number of PCs to keep (that explain 90% of cumulative variance)
+n_pcs_to_keep <- which(cumulative_variance >= 0.9)[1]
+
+# Create a new data frame with the selected PCs for training
+pca_train_data <- data.frame(pca_result$x[, 1:n_pcs_to_keep])
+pca_train_data$teff <- train_data$teff  # Add the target variable back
+
+# Run linear regression on the selected PCs
+pc_model <- lm(teff ~ ., data = pca_train_data)
+
+# Prepare test data
+# Scale the test predictors manually using the same means and standard deviations
+test_predictors <- test_data %>% select(-teff) %>% select_if(is.numeric)
+
+# Ensure the test predictors have the same number of columns as training predictors
+print("Dimensions of test predictors:")
+print(dim(test_predictors))
+
+# Manually scale the test data using training means and standard deviations
+test_predictors_scaled <- scale(test_predictors, center = training_means, scale = training_sds)
+
+# Apply PCA transformation to the test set
+pca_test_data <- data.frame(predict(pca_result, newdata = test_predictors_scaled)[, 1:n_pcs_to_keep])
+
+# Add the response variable back for evaluation
+pca_test_data$teff <- test_data$teff
+
+# Make predictions
+pca_predictions <- predict(pc_model, newdata = pca_test_data)
+
+# Calculate MSE for the PCA model
+pca_mse <- mean((pca_test_data$teff - pca_predictions)^2)
+print(paste("MSE for the PCA model:", pca_mse))
+
+# Calculate MSE for the full model for comparison
+full_model <- lm(teff ~ ., data = train_data)
+full_predictions <- predict(full_model, newdata = test_data)
+full_mse <- mean((test_data$teff - full_predictions)^2)
+print(paste("MSE for the full model:", full_mse))
+
+# Assuming bss_mse is defined from earlier
+print(paste("MSE for the best subset model:", bss_mse))
+```
+The MSE of the full model is still much lower than that of the PCA model and the best subset model. Removing the multicollinear variables does not help with improving predictions for this dataset. This is because the multicollinear variables have the most variance influence and greatly impacts the predictive ability of the model (as shown in the loading plot below). Using alternative modeling methods such as LASSO or Ridge regression seem to work better for this dataset. Also, transforming the data in another way other than using a log transformation might work better. Also, non-linear ML models may work better for this dataset.
+
+### PCA Loading Plot
+```{r}
+# Assuming pca_result is the result from the prcomp() function
+# Extract loadings
+loadings <- as.data.frame(pca_result$rotation)
+
+# Add variable names
+loadings$Variable <- rownames(loadings)
+
+# Melt the data for ggplot2
+loadings_long <- loadings %>% 
+  pivot_longer(-Variable, names_to = "Principal_Component", values_to = "Loading")
+
+# Calculate the explained variance for plotting
+explained_variance <- summary(pca_result)$importance[2, ]
+cumulative_variance <- cumsum(explained_variance)
+
+# Create a data frame with variable names and their explained variance
+loadings_long$Variance_Explained <- rep(explained_variance, each = nrow(loadings))
+
+# Plotting variable loadings with variance influence
+p <- ggplot(loadings_long, aes(x = Variable, y = Loading, fill = Principal_Component)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_hline(yintercept = 0, color = "black", linetype = "dashed") +
+  labs(title = "Variable Loadings from PCA",
+       x = "Variables",
+       y = "Loadings") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_brewer(palette = "Set3") +  # Use Set3 for more colors
+  geom_text(aes(label = round(Loading, 2)), position = position_dodge(width = 0.9), vjust = -0.5)
+
+# Print the plot
+print(p)
+
+# Save the plot
+ggsave("pca_variable_loadings.png", plot = p, width = 10, height = 6)
+```
+

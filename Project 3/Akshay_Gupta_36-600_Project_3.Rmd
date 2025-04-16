@@ -1,0 +1,349 @@
+---
+title: 'Project 3'
+author: "Akshay_Gupta_36-600_Project_3"
+output:
+  html_document:
+  toc: false
+  theme: spacelab
+---
+
+### Load necessary libraries
+```{r}
+suppressPackageStartupMessages(library(tidyverse))    # For data manipulation and plotting
+suppressPackageStartupMessages(library(gridExtra))    # For arranging multiple grid-based plots
+suppressPackageStartupMessages(library(corrplot))     # For creating correlation matrix plots
+suppressPackageStartupMessages(library(randomForest)) # For Random Forest models
+suppressPackageStartupMessages(library(caret))        # For data partitioning, cross-validation, and model training
+suppressPackageStartupMessages(library(pROC))          # For ROC curve analysis and AUC calculation
+suppressPackageStartupMessages(library(rpart.plot))    # For plotting decision trees
+```
+
+### Load and Inspect the Data stellar_temperature.csv
+```{r}
+wine_data <- read.csv("wineQuality.csv")
+
+str(wine_data)
+summary(wine_data)
+colSums(is.na(wine_data)) # no 'na' values
+```
+
+### Pre-processing
+```{r}
+# Ensure Correct Data Types
+wine_data$density <- factor(wine_data$density, levels = c(1, 2, 3))
+wine_data$label <- factor(wine_data$label, levels = c("BAD", "GOOD")) # target variable
+
+# Split Data
+set.seed(42)
+train_index <- sample(seq_len(nrow(wine_data)), size = 0.7 * nrow(wine_data))
+train_data <- wine_data[train_index, ]
+test_data <- wine_data[-train_index, ]
+
+
+pre_process <- preProcess(train_data[, -ncol(train_data)], method = c("center", "scale"))
+train_data_scaled <- predict(pre_process, train_data)
+test_data_scaled <- predict(pre_process, test_data)
+```
+I did a 70%-30% split for the training and test data since the dataset size is large. I did this rather than a 80%-20% split as it reduces model overfitting and gives a larger test set for model evaluation. The split is random to ensure that the distribution of variables are similar.
+
+### Exploratory Data Analysis (EDA) 
+```{r}
+# Create histograms for each continuous variable distributions
+continuous_vars <- names(wine_data)[sapply(wine_data, is.numeric) & !(names(wine_data) %in% c("label", "density"))] # exclude categorical variables
+
+# Create an empty list to store all plots
+plot_list <- list()
+
+# Generate histograms and store them in the list
+for (var in continuous_vars) {
+  plot_list[[var]] <- ggplot(wine_data, aes(x = .data[[var]])) +
+    geom_histogram(bins = 20, fill = "orange", color = "white", alpha = 0.7) +
+    labs(title = paste("Hist. of", var), x = var, y = "Frequency") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+# Use grid.arrange to display the plots in a grid
+grid.arrange(grobs = plot_list, ncol = 4)  # Adjust `ncol` for desired number of columns
+
+# Define a consistent color palette
+label_colors <- c(GOOD = "skyblue", BAD = "tomato")
+
+# Bar plot for 'label' (GOOD vs. BAD)
+ggplot(wine_data, aes(x = label, fill = label)) +
+  geom_bar() +
+  scale_fill_manual(values = label_colors) +  # Apply custom colors
+  labs(title = "Bar Plot of Wine Label (GOOD vs. BAD)", x = "Label", y = "Count") +
+  theme_minimal()
+
+# Check the distribution of the response variable (label)
+table(wine_data$label)
+prop.table(table(wine_data$label))
+# Check the distribution of density
+table(wine_data$density)
+prop.table(table(wine_data$density))
+
+# For training data
+ggplot(train_data, aes(x = label, fill = label)) +
+  geom_bar() +
+  scale_fill_manual(values = label_colors) +  # Apply custom colors
+  labs(title = "Bar Plot for Training Data (GOOD vs. BAD)", x = "Label", y = "Count") +
+  theme_minimal()
+
+prop.table(table(train_data$label))
+prop.table(table(train_data$density))
+
+# Variable correlations heatmap
+numeric_data <- wine_data[, sapply(wine_data, is.numeric)] # Exclude non-numeric columns (e.g., 'label' and 'density')
+corr_matrix <- cor(numeric_data)
+corrplot(corr_matrix, method = "color")
+```
+From the distributions of the continuous data, the 'sugar' and 'chlorides' variables are the most right skewed. The distributions of the labels are consistent between the full dataset and the training data. The variables do not have any major high correlation issues.
+
+### Check Distributions After Scaling
+```{r}
+# Create histograms for each continuous variable distributions
+# Create an empty list to store all plots
+plot_list <- list()
+
+# Generate histograms and store them in the list
+for (var in continuous_vars) {
+  plot_list[[var]] <- ggplot(train_data_scaled, aes(x = .data[[var]])) +
+    geom_histogram(bins = 20, fill = "green", color = "white", alpha = 0.7) +
+    labs(title = paste("Hist. of", var), x = var, y = "Frequency") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+# Use grid.arrange to display the plots in a grid
+grid.arrange(grobs = plot_list, ncol = 4)  # Adjust `ncol` for desired number of columns
+```
+The distributions are scaled and centered around 0.
+
+### Logistic Regression Model
+```{r}
+# Define a grid of possible values for regularization (lambda) and alpha (L1/L2)
+tune_grid <- expand.grid(alpha = c(0, 0.5, 1),  # alpha: 0 is L2 (Ridge), 1 is L1 (Lasso), 0.5 is elastic net
+                        lambda = seq(0, 1, by = 0.1))  # lambda: strength of the regularization
+
+# Train a Logistic Regression Model with regularization tuning
+set.seed(42)
+logistic_model <- train(label ~ ., data = train_data_scaled, method = "glmnet", family = "binomial", 
+                        tuneGrid = tune_grid)
+```
+
+### Analysis of Logistic Regression Model
+```{r}
+# Predict probabilities for the positive class ('GOOD')
+logistic_predictions <- predict(logistic_model, newdata = test_data_scaled, type = "prob")
+
+# ROC Curve using the probabilities for the positive class ('GOOD')
+roc_curve_log <- roc(test_data_scaled$label, logistic_predictions$GOOD)  # 'GOOD' is the positive class
+
+# Plot ROC Curve
+plot(roc_curve_log, main = "ROC Curve for Logistic Regression", col = "blue")
+
+# AUC (Area Under the Curve)
+auc_value_log <- auc(roc_curve_log)
+cat("AUC (Logistic): ", auc_value_log, "\n")
+
+# Youden's J (Optimal Threshold)
+youden_j_log <- coords(roc_curve_log, "best", ret = "all")
+optimal_threshold <- youden_j_log$threshold
+cat("Youden's J (Logistic): ", optimal_threshold, "\n")
+
+# Apply optimal threshold to classify the test set
+predicted_class_log <- factor(ifelse(logistic_predictions$GOOD > optimal_threshold, "GOOD", "BAD"), 
+                          levels = c("BAD", "GOOD"))
+
+# Confusion Matrix with the optimal threshold
+conf_matrix_log <- confusionMatrix(predicted_class_log, test_data_scaled$label)
+print(conf_matrix_log$table)  # Only the confusion matrix
+
+# Misclassification Rate (1 - Accuracy)
+misclassification_rate_log <- 1 - conf_matrix_log$overall['Accuracy']
+cat("Misclassification Rate (Logistic): ", misclassification_rate_log, "\n")
+
+# Output the best tuning parameters (alpha and lambda) for the final model
+cat("Best Alpha: ", logistic_model$bestTune$alpha, "\n")
+cat("Best Lambda: ", logistic_model$bestTune$lambda, "\n")
+```
+Logistic Regression for classification performs reasonably well with a AUC of 0.79 and a misclassification rate of 0.26. Using an elastic net for logistic regression is better than using ridge or lasso. 
+
+### Decision Tree Classification
+```{r}
+set.seed(42)
+tree_model <- train(label ~ ., data = train_data_scaled, method = "rpart", 
+                    tuneGrid = expand.grid(cp = seq(0, 0.1, by = 0.005))) # Tune the 'cp' parameter to control tree complexity and pruning
+```
+
+### Analysis of Decision Tree Classification
+```{r}
+# Predict probabilities (not classes) using the Decision Tree model
+tree_predictions <- predict(tree_model, newdata = test_data_scaled, type = "prob")
+
+# ROC Curve for Decision Tree
+roc_curve_tree <- roc(test_data_scaled$label, tree_predictions$GOOD)
+plot(roc_curve_tree, main = "ROC Curve for Decision Tree", col = "red")
+
+# AUC (Area Under the Curve) for Decision Tree
+auc_value_tree <- auc(roc_curve_tree)
+cat("AUC (Decision Tree): ", auc_value_tree, "\n")
+
+# Youden's J (Optimal Threshold) for Decision Tree
+youden_j_tree <- coords(roc_curve_tree, "best", ret = "all")
+optimal_threshold_tree <- youden_j_tree$threshold
+cat("Youden's J (Decision Tree): ", optimal_threshold_tree, "\n")
+
+# Apply optimal threshold to classify the test set
+predicted_class_tree <- factor(ifelse(tree_predictions$GOOD > optimal_threshold_tree, "GOOD", "BAD"), 
+                               levels = c("BAD", "GOOD"))
+
+# Confusion Matrix with the optimal threshold for Decision Tree
+confusion_matrix_tree <- confusionMatrix(predicted_class_tree, test_data_scaled$label)
+print(confusion_matrix_tree$table)
+
+# Misclassification Rate for Decision Tree
+misclassification_rate_tree <- 1 - confusion_matrix_tree$overall['Accuracy']
+cat("Misclassification Rate (Decision Tree): ", misclassification_rate_tree, "\n")
+
+# Plot the Decision Tree
+rpart.plot(tree_model$finalModel, main = "Decision Tree for Classification", 
+           extra = 106,  # Show additional information (e.g., node counts, probabilities)
+           fallen.leaves = TRUE,  # Position the leaf nodes at the bottom of the plot
+           cex = 0.8)  # Adjust text size
+
+plot(tree_model)
+```
+Most of the dataset is important when it comes to pruning for decision tree modeling. Using a cp of 0.005, minimal pruining is done to obtain the lowest misclassification rate and highest accuracy.
+
+### Random Forest Classification
+```{r}
+set.seed(42)
+rf_model <- train(label ~ ., data = train_data_scaled, method = "rf", 
+                  tuneGrid = expand.grid(mtry = c(2, 5, 8, 11)))
+```
+
+### Analysis of Random Forest Classification
+```{r}
+# Predict probabilities (not classes) using the Random Forest model
+rf_predictions <- predict(rf_model, newdata = test_data_scaled, type = "prob")
+
+# ROC Curve for Random Forest
+roc_curve_rf <- roc(test_data_scaled$label, rf_predictions$GOOD)
+plot(roc_curve_rf, main = "ROC Curve for Random Forest", col = "green")
+
+# AUC (Area Under the Curve) for Random Forest
+auc_value_rf <- auc(roc_curve_rf)
+cat("AUC (Random Forest): ", auc_value_rf, "\n")
+
+# Youden's J (Optimal Threshold) for Random Forest
+youden_j_rf <- coords(roc_curve_rf, "best", ret = "all")
+optimal_threshold_rf <- youden_j_rf$threshold
+cat("Youden's J (Random Forest): ", optimal_threshold_rf, "\n")
+
+# Apply optimal threshold to classify the test set
+predicted_class_rf <- factor(ifelse(rf_predictions$GOOD > optimal_threshold_rf, "GOOD", "BAD"), 
+                             levels = c("BAD", "GOOD"))
+
+# Confusion Matrix with the optimal threshold for Random Forest
+confusion_matrix_rf <- confusionMatrix(predicted_class_rf, test_data_scaled$label)
+print(confusion_matrix_rf$table)
+
+# Misclassification Rate for Random Forest
+misclassification_rate_rf <- 1 - confusion_matrix_rf$overall['Accuracy']
+cat("Misclassification Rate (Random Forest): ", misclassification_rate_rf, "\n")
+
+# Plot Variable Importance
+var_imp_rf <- varImp(rf_model, scale = TRUE)
+plot(var_imp_rf, main = "Variable Importance for Random Forest")
+
+# Plot the Random Forest Model (using caret package's default plot)
+plot(rf_model$finalModel, main = "Random Forest Classification (Model Overview)")
+
+# Check the best mtry value selected
+best_mtry <- rf_model$bestTune$mtry
+cat("Best mtry value: ", best_mtry, "\n")
+```
+From the variable importance plot, we can see that alcohol is the most important variable while density is the least important variable. Density can be removed for improving the predictive models. Using an mtry value of 2 gives the best random forest model indicating that only 2 features are considered for splitting the trees. From the model overview plot, using 80 trees is ideal for reducing error as the error gradient tails off after that.
+
+### K-Nearest Neighbors Classification
+```{r}
+set.seed(42)
+knn_model <- train(label ~ ., data = train_data_scaled, method = "knn", 
+                   tuneGrid = expand.grid(k = seq(1, 30, by = 1)))
+```
+
+### Analysis of K-Nearest Neighbors Classification
+```{r}
+# Predict probabilities (not classes) using the K-Nearest Neighbors model
+knn_predictions <- predict(knn_model, newdata = test_data_scaled, type = "prob")
+
+# ROC Curve for K-Nearest Neighbors
+roc_curve_knn <- roc(test_data_scaled$label, knn_predictions$GOOD)
+plot(roc_curve_knn, main = "ROC Curve for K-Nearest Neighbors", col = "purple")
+
+# AUC (Area Under the Curve) for K-Nearest Neighbors
+auc_value_knn <- auc(roc_curve_knn)
+cat("AUC (K-Nearest Neighbors): ", auc_value_knn, "\n")
+
+# Youden's J (Optimal Threshold) for K-Nearest Neighbors
+youden_j_knn <- coords(roc_curve_knn, "best", ret = "all")
+optimal_threshold_knn <- youden_j_knn$threshold
+cat("Youden's J (K-Nearest Neighbors): ", optimal_threshold_knn, "\n")
+
+# Apply optimal threshold to classify the test set
+predicted_class_knn <- factor(ifelse(knn_predictions$GOOD > optimal_threshold_knn, "GOOD", "BAD"), 
+                              levels = c("BAD", "GOOD"))
+
+# Confusion Matrix with the optimal threshold for K-Nearest Neighbors
+confusion_matrix_knn <- confusionMatrix(predicted_class_knn, test_data_scaled$label)
+print(confusion_matrix_knn$table)
+
+# Misclassification Rate for K-Nearest Neighbors
+misclassification_rate_knn <- 1 - confusion_matrix_knn$overall['Accuracy']
+cat("Misclassification Rate (K-Nearest Neighbors): ", misclassification_rate_knn, "\n")
+
+# Plot the Accuracy vs. k
+plot(knn_model, main = "Accuracy vs. Number of Neighbors (k) for KNN")
+
+# Best k value
+best_k <- knn_model$bestTune$k
+cat("Best k (Number of Neighbors): ", best_k, "\n")
+```
+From the accuracy versus number of k neighbors plot, we can see that k=28 give an optimal KNN prediction model. Setting the k to 1 causes overfitting, increasing sensitivity to noise and is not a good practice for prediction modeling and will not produce good results with new datasets.
+
+### ROC AUC Comparison of the Models
+```{r}
+# Plot the ROC curve for Logistic Regression
+roc_plot <-plot(roc_curve_log, col = "blue", main = "ROC Curves Comparison", xlim = c(1, 0), ylim = c(0, 1), 
+                xlab = "False Positive Rate", ylab = "True Positive Rate", lwd = 2)
+# Add ROC curves for other models
+lines(roc_curve_tree, col = "red", lwd = 2)  # Decision Tree
+lines(roc_curve_rf, col = "green", lwd = 2)  # Random Forest
+lines(roc_curve_knn, col = "purple", lwd = 2)  # KNN
+
+# Add AUC values to the legend
+legend("bottomright", 
+       legend = c(paste("Logistic ( AUC =", round(auc_value_log, 4), ")"),
+                  paste("Decision Tree ( AUC =", round(auc_value_tree, 4), ")"),
+                  paste("Random Forest ( AUC =", round(auc_value_rf, 4), ")"),
+                  paste("KNN ( AUC =", round(auc_value_knn, 4), ")")),
+       fill = c("blue", "red", "green", "purple"))
+
+# Create a table with models, AUC, and misclassification rates
+model_stats <- data.frame(
+  Model = c("Logistic Regression", "Decision Tree", "Random Forest", "KNN"),
+  AUC = c(round(auc_value_log, 4), round(auc_value_tree, 4), round(auc_value_rf, 4), round(auc_value_knn, 4)),
+  MisclassificationRate = c(round(misclassification_rate_log, 4), 
+                            round(misclassification_rate_tree, 4), 
+                            round(misclassification_rate_rf, 4), 
+                            round(misclassification_rate_knn, 4))
+)
+print(model_stats)
+```
+Using Youden’s J to find the optimal threshold is significantly better for classification compared to setting the threshold to 0.5 since every binary dataset would have it's own ideal threshold.
+
+From the 4 models, we can see that random forest classification performs the best with the optimal threshold using Youden’s J with a AUC of 0.88 and a misclassification rate of 0.18. Logistic, Decision Tree, and KNN classification perform significantly worse than random forest, with AUCs of 0.79, 0.76, and 0.80 respectively. With different data splits and parameters for each model, the performances vary a bit but RF performs the best overall.
+
+This is probably because RF uses multiple decision trees and considers features importance in it's modeling.

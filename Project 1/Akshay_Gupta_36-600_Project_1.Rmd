@@ -1,0 +1,98 @@
+---
+title: 'Project 1'
+author: "Akshay_Gupta_36-600_Project_1"
+output:
+  html_document:
+  toc: false
+  theme: spacelab
+---
+
+Read and define cmu-sleep.csv as data frame, df
+```{r}
+df <- read.csv("cmu-sleep.csv")
+head(df)
+```
+Check basic information of the data frame: what is the size of the data frame, what are the data types in each column, summary of data, and how many null values are in columns of data frame.
+```{r}
+str(df)
+summary(df)
+colSums(is.na(df))
+```
+Drop columns (subject_id, study, cohort, term_units) based on usefulness: these columns have no intrinsic meaningful data/are identifiers that can be used for data analysis, Zterm_units_ZofZ	is a better way to compare unit compared to term_units as the university counts units differently.
+
+Though the data comes from 3 different colleges, our aim is to find out how the student's sleep affects their GPA during the term and cumulatively. 
+
+Remove null values/replace according to data type: There are 8 null values in demo_race, demo_gender, and demo_ firstgen, these rows have been omitted. Also, there is one row in demo_firstgen that has a value of 2 which is undefined. This row has been omitted as well. There are 147 null values in term_units/Zterm_units_ZofZ. These values have been replaced with the mean term units.
+```{r}
+library(tidyverse)
+#drop columns
+df <- df %>% select(-subject_id,-study,-cohort,-term_units) #drop columns
+
+#remove rows with NA values in specific columns
+df <- df %>% filter(!is.na(demo_race),!is.na(demo_gender),!is.na(demo_firstgen))
+df <- df %>% filter(demo_firstgen != 2)
+#replace NA values in Zterm_units_ZofZ values with mean value
+df <- df %>% mutate(Zterm_units_ZofZ = ifelse(is.na(Zterm_units_ZofZ),mean(Zterm_units_ZofZ,na.rm = TRUE),Zterm_units_ZofZ))
+
+df <- df %>% mutate(across(everything(),as.numeric))
+
+str(df)
+head(df)
+colSums(is.na(df))
+```
+Plotting box plots of 'firstgen', 'gender', and 'race' in relation to the cumulative GPA show that non-firstgen students had a higher GPA than firstgen students, gender did not play major role in the GPA, and underrepresented races generally had a lower GPA than non-underrepresented races.
+
+demo_firstgen	: non-first gen = 0, first-gen = 1
+demo_gender: male = 0, female = 1
+demo_race: underrepresented = 0, non-underrepresented = 1
+
+The cum_gpa bar plots according to firstgen/gender/race show that there many more non-firstgen students in the study than firstgen students, a 5:1 ratio. Males to females in the study have a ratio of 5:7. There are much fewer underrepresented students than represented students in the study (1:5 ratio).
+```{r}
+df$demo_race <- factor(df$demo_race)
+df$demo_gender <- factor(df$demo_gender)
+df$demo_firstgen <- factor(df$demo_firstgen)
+
+df %>% select(.,demo_race,demo_gender,demo_firstgen) %>% gather(.) %>% ggplot(.,mapping=aes(x=value,y=rep(df$cum_gpa,3)))+geom_boxplot(fill="green")+facet_wrap(~key,scales='free_x')+ ylab("Cumulative GPA")
+
+df %>% select(.,demo_race) %>% table(.)
+df %>% select(.,demo_gender) %>% table(.)
+df %>% select(.,demo_firstgen) %>% table(.)
+df %>% select(.,demo_race,demo_gender,demo_firstgen) %>% gather(.) %>% ggplot(.,mapping=aes(x=value))+geom_bar(fill="orange")+facet_wrap(~key,scales='free_x')
+```
+
+Distributions for columns in df:
+TotalSleepTime and Zterm_units are normally distributed. The other plots are more skewed to either side as majority students get regular sleep, mmost student score above 3.5 GPA, and most students do not sleep in the day. Also,the TotalSleepTime and Zterm_units are normally distributed as most sudents get 6-7 hours of sleep and have a general zterm_units value of 0 which is around the mean. Also, the term_gpa is similar to the cum_gpa as the study was conducted on students during their first year of studies in college,
+```{r}
+df %>% select(.,-demo_race,-demo_gender,-demo_firstgen) %>% gather(.) %>% ggplot(.,mapping=aes(x=value))+geom_histogram(fill="orchid",bins=30)+facet_wrap(~key,scales='free')
+```
+Scatter plots of variables with respect to Cumulative GPA. Similar to the histogram plots, the TotalSleepTime and Zterm_units are normally distributed, The other other variable are left or right skewed but the variables have a ceiling effect since the max cumulative GPA is 4.
+The boxplots are created to detect outliers for the continuous data. Data points outside max and min of the plot (75th percentile + 1.5 * IQR & 25th percnetile - 1.5 * IQR)
+```{r}
+df %>% select(.,-cum_gpa,-demo_race,-demo_gender,-demo_firstgen)%>% gather(.) %>% ggplot(.,mapping=aes(x=value,y=rep(df$cum_gpa,7)))+geom_point(col="skyblue")+facet_wrap(~key,scales='free')+ ylab("Cumulative GPA")
+
+# Create a boxplot for variables
+par(mar = c(10,4,4,2)) #boxplot margins
+boxplot(df[,c("bedtime_mssd","TotalSleepTime","midpoint_sleep","frac_nights_with_data","daytime_sleep","term_gpa","Zterm_units_ZofZ")],main = "Boxplot of Variables",ylab = "Count",col = "lightcoral",names =c("bedtime_mssd","TotalSleepTime","midpoint_sleep","frac_nights_with_data","daytime_sleep","term_gpa","Zterm_units_ZofZ"),las = 2)  # Rotate x-axis labels to be vertical
+```
+For outliers, I removed data points that were very far from the main clusters in the scatter plots, particularity in bedtime_mssd, daytime_sleep, and term_gpa.
+From the boxplots,the values outside upper line (75th percentile + 1.5 * IQR) and outside the bottom line (25th percentile - 1.5* IQR) are also considered outliers and are removed. TotalSleepTime and midpoint_sleep were filtered with this method. TotalSleepTime is normally distributed with a mean around 400. Hence outliers are removed from both ends.
+The scatter plots were re-plotted after the outliers were visually removed.
+Bedtime_mssd is just the sleep missed between days which skews toward 0 (right skewed).
+```{r}
+df <- df %>% filter(bedtime_mssd < 15) %>% filter(daytime_sleep<200) %>% filter(term_gpa>1) %>% filter(TotalSleepTime>250 & TotalSleepTime<550) %>% filter(midpoint_sleep<650) #outliers
+
+df %>% select(.,-cum_gpa,-demo_race,-demo_gender,-demo_firstgen)%>% gather(.) %>% ggplot(.,mapping=aes(x=value,y=rep(df$cum_gpa,7)))+geom_point(col="deepskyblue")+facet_wrap(~key,scales='free')+ ylab("Cumulative GPA")
+```
+Plotting the correlation plot to see which variables have high correlation. The variables related to sleep,  ("bedtime_mssd","TotalSleepTime","midpoint_sleep","frac_nights_with_data","daytime_sleep") have high positve or negative correlations with each other and affect the term_gpa more than the zterm_units, although this is another variable that can be analyzed further.
+```{r}
+library(corrplot)
+df %>% select(.,-demo_race,-demo_gender,-demo_firstgen,-cum_gpa)%>%cor(.)%>%corrplot(.,method="ellipse")
+```
+Plotting the correlation plot to see which variables have high correlation with the target variable, cumulative GPA. Here we can see that the sleep variables, espeically midpoint_sleep, daytime_sleep, and TotalSleepTime have the highest correlation (other than term_gpa since that is directly related to the cum_gpa).
+```{r}
+cor_matrix <- df %>% select(-demo_race,-demo_gender,-demo_firstgen) %>% cor()
+
+#Plot the correlation matrix with the target variable ('cum_gpa') highlighted
+corrplot(cor_matrix,method = "square",tl.col = ifelse(rownames(cor_matrix) == "cum_gpa","red","black"),tl.cex = ifelse(rownames(cor_matrix) == "cum_gpa",1.2,1))
+```
+
