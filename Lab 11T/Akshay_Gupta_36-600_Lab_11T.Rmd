@@ -1,0 +1,170 @@
+---
+title: "Lab: Nonlinear Regression"
+author: "Akshay_Gupta_36-600_Lab_11T"
+output: 
+  html_document:
+    toc: no
+    toc_float: no
+    theme: spacelab
+---
+
+## Data
+
+We'll begin by simulating a dataset from a nonlinear curve:
+```{r}
+set.seed(555)
+x <- -5:5
+y <- 0.1*x^3 - 0.5*x + 2.1 + rnorm(length(x),mean=0,sd=0.5*(1+abs(x)))
+e <- 0.5*(1+abs(x))
+
+df <- data.frame("x"=x,"y"=y,"e"=e)
+
+suppressMessages(library(tidyverse))
+ggplot(data=df,mapping=aes(x=x,y=y)) +
+  geom_errorbar(aes(ymin=y-e, ymax=y+e), width=.1,color="blue") +
+  geom_point(color="firebrick")
+```
+
+# Questions
+
+## Question 1
+
+Implement a (weighted) global cubic polynomial regression model in a similar manner to that implemented in the notes; namely, that means learn the model, run predict to determine the regression line, plot the data with the regression line superimposed, show the coefficients, and compute the mean-squared error. Like we did(n't do) in the notes, do not split the data into training and test datasets.
+```{r echo=FALSE,fig.width=4,fig.height=4,fig.align="center"}
+# REPLACE ME WITH CODE
+pr.out <- lm(y~poly(x,3,raw = TRUE),data = df,weights = 1/(e^2))
+pr.pred <- predict(pr.out)
+
+# Calculate Mean-Squared Error (MSE)
+mse <- mean((y - pr.pred)^2)
+cat("\nMean-Squared Error:", mse, "\n")
+
+# Display the model's coefficients in a data frame
+coefficients_df <- data.frame("Estimate" = summary(pr.out)$coefficients[, 1])
+print(coefficients_df)
+
+
+# Add predictions to the data frame for plotting
+df$predicted_y <- pr.pred
+
+# Plot the data, including error bars, with the regression line
+ggplot(data = df, mapping = aes(x = x, y = y)) +
+  geom_errorbar(aes(ymin = y - e, ymax = y + e), width = 0.1, color = "blue") +
+  geom_point(color = "firebrick") +  geom_line(aes(y = predicted_y), color = "green", size = 1) +
+  labs(title = "Weighted Cubic Polynomial Regression", x = "x", y = "y") + theme_minimal()
+```
+
+## Question 2
+
+Repeat Q1, but utilizing a regression splines model. Assume four degrees of freedom.
+```{r echo=FALSE,fig.width=4,fig.height=4,fig.align="center"}
+# REPLACE ME WITH CODE
+library(splines)
+
+# Fit a regression splines model with 4 degrees of freedom
+s.out <- lm(y ~ bs(x, df = 4), data = df, weights = 1/(e^2))
+
+# Generate predictions using the fitted model
+s.pred <- predict(s.out)
+
+# Add predictions to the data frame for plotting
+df$predicted_y <- s.pred
+
+# Calculate Mean-Squared Error (MSE)
+mse <- mean((y-s.pred)^2)
+cat("\nMean-Squared Error:", mse, "\n")
+
+# Display model coefficients in a data frame
+coefficients_df <- data.frame("Estimate" = summary(s.out)$coefficients[,1])
+print(coefficients_df)
+
+# Plot the data, including error bars, with the regression line
+ggplot(data = df, mapping = aes(x = x, y = y)) +
+  geom_errorbar(aes(ymin = y - e, ymax = y + e), width = 0.1, color = "blue") +
+  geom_point(color = "firebrick") +
+  geom_line(aes(y = predicted_y), color = "orange", size = 1) +
+  labs(title = "Weighted Regression Splines Model",
+       x = "x", y = "y") +  theme_minimal()
+```
+
+## Question 3
+
+Repeat Q1, but with a smoothing spline model. Note that you may get a "surprising" result.
+```{r echo=FALSE,fig.width=4,fig.height=4,fig.align="center"}
+# REPLACE ME WITH CODE
+# Fit a smoothing spline model with cross-validation to determine the optimal smoothing parameter
+ss.out <- suppressWarnings(smooth.spline(df$x,y=df$y,w=1/(df$e^2),cv=TRUE))
+
+# Display the chosen smoothing parameter
+smoothing_parameter <- ss.out$lambda
+cat("\nChosen smoothing parameter:", smoothing_parameter, "\n")
+
+# Generate predictions using the fitted model
+ss.pred <- predict(ss.out)
+
+# Calculate Mean-Squared Error (MSE)
+mse <- mean((y-ss.pred$y)^2)
+cat("\nMean-Squared Error:", mse, "\n")
+
+# Add predictions to the data frame for plotting
+df$predicted_y <- ss.pred$y
+
+# Plot the data, including error bars, with the smoothing spline line
+ggplot(data = df, mapping = aes(x = x, y = y)) +
+  geom_errorbar(aes(ymin = y - e, ymax = y + e), width = 0.1, color = "blue") +
+  geom_point(color = "firebrick") +
+  geom_line(aes(y = predicted_y), color = "green", size = 1) +
+  labs(title = "Weighted Smoothing Spline Model",
+       x = "x", y = "y") +
+  theme_minimal()
+```
+
+## Question 4
+
+Repeat Q1, but with a local polynomial regression model. Assume a `span` of 0.6.
+```{r}
+# REPLACE ME WITH CODE
+lpr.out <- loess(y~x,data=df,weights=1/(df$e)^2,span=0.6)
+lpr.pred <- predict(lpr.out)
+
+# Calculate Mean-Squared Error (MSE)
+mse <- mean((df$y - lpr.pred)^2)
+cat("\nMean-Squared Error:", mse, "\n")
+
+# Add predictions to the data frame for plotting
+df$predicted_y <- lpr.pred
+
+# Plot the data, including error bars, with the regression line
+ggplot(data = df, mapping = aes(x = x, y = y)) +
+  geom_errorbar(aes(ymin = y - e, ymax = y + e), width = 0.1, color = "blue") +
+  geom_point(color = "firebrick") +
+  geom_line(aes(y = predicted_y), color = "purple", size = 1) +
+  labs(title = "Weighted Local Polynomial Regression Model",
+       x = "x", y = "y") + theme_minimal()
+```
+
+## Question 5
+
+Redo the plot in Q4, but let's add a one-standard-error confidence band. You can do this by running the first line, then adding the last two lines onto your `ggplot()` call:
+```
+p <- predict(lpr.out,se=TRUE)
+
++ geom_line(mapping=aes(x=lpr.out$x,y=lpr.out$fitted+p$se),color="[your color]",linetype="dashed")
++ geom_line(mapping=aes(x=lpr.out$x,y=lpr.out$fitted-p$se),color="[your color]",linetype="dashed")
+```
+What does the band actually mean? Because it's a one-standard-error band, it means that for any given $x$, there is an approximately 68% chance that the band overlaps the true underlying function value. This is a rough statement, though, given the correlation between neighboring data points (i.e., the lack of independence between $y_{i-1}$, $y_i$, and $y_{i+1}$, etc.). Just think of the band as a notion of how uncertain your fitted curve is at each $x$: is the band thin, or wide? Note that the bands get wider as we get to either end of the data: this is an expected feature, not a bug. There's fewer data within the span at either end, so the fitted function is that much more uncertain.
+```{r}
+# REPLACE ME WITH CODE
+p <- predict(lpr.out,se=TRUE)
+
+
+# Plot the data, including error bars, with the regression line
+ggplot(data = df, mapping = aes(x = x, y = y)) +
+  geom_errorbar(aes(ymin = y - e, ymax = y + e), width = 0.1, color = "blue") +
+  geom_point(color = "firebrick") +
+  geom_line(aes(y = predicted_y), color = "purple", size = 1) +
+  geom_line(mapping=aes(x=lpr.out$x,y=lpr.out$fitted+p$se),color="green",linetype="dashed") +
+  geom_line(mapping=aes(x=lpr.out$x,y=lpr.out$fitted-p$se),color="red",linetype="dashed") +
+  labs(title = "Weighted Local Polynomial Regression Model",
+       x = "x", y = "y") + theme_minimal()
+```

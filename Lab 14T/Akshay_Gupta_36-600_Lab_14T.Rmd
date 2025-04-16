@@ -1,0 +1,173 @@
+---
+title: "Lab: Data Analysis Workflow Review"
+author: "Akshay_Gupta_36-600_Lab_14T"
+output:
+  html_document:
+    toc: no
+    toc_float: no
+    theme: spacelab
+  pdf_document:
+    toc: no
+---
+
+This week's lab is very much do-it-yourself. On `Canvas`, under `Files > DATA`, there is a file called `creditDefault.csv`. Your boss wants to know if any of the variables included in this file, apart from `Default` itself, are important for predicting whether a person will default rather than paying back their credit-card balance.
+
+From the information above, you should construct an appropriate answer. Note that regardless of whether you think a non-ML model is sufficient, you should always check to see if an ML model gives much better predictive results. Also note that your boss is not necessarily looking for plots here...but you'd always want to do *some* EDA, if for no other reason than to ensure you don't have missing data or outliers!
+
+### Load and Inspect the Data
+```{r}
+# Load necessary libraries
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(corrplot))
+
+#Load in Data
+credit_data <- read.csv("creditDefault.csv")
+
+#Inspect Data
+str(credit_data)
+summary(credit_data)
+colSums(is.na(credit_data)) # check for 'na' values
+```
+### EDA
+```{r}
+# Encode categorical factors to numeric (0 = No, 1 = Yes)
+credit_data$Default <- ifelse(credit_data$Default == "Yes", 1, 0)
+credit_data$Student <- ifelse(credit_data$Student == "Yes", 1, 0)
+
+# Visualize continuous variable distributions
+ggplot(credit_data, aes(x = Balance)) +
+  geom_histogram(bins = 30, fill = "red", color = "white", alpha = 0.7) +
+  theme_minimal()
+
+ggplot(credit_data, aes(x = Income)) +
+  geom_histogram(bins = 30, fill = "green", color = "white", alpha = 0.7) +
+  theme_minimal()
+
+# Distribution of the 'Student' variable
+ggplot(credit_data, aes(x = factor(Student, labels = c("No", "Yes")))) +
+  geom_bar(fill = "deepskyblue") +
+  theme_minimal() +
+  labs(title = "Distribution of Student Variable", x = "Student Status", y = "Count")
+
+# Distribution of the 'Default' variable
+ggplot(credit_data, aes(x = factor(Default, labels = c("No", "Yes")))) +
+  geom_bar(fill = "orange") +
+  theme_minimal() +
+  labs(title = "Distribution of Default Variable", x = "Default Status", y = "Count")
+
+# Correlation matrix (heatmap)
+#convert factor data to numeric for corr plot
+credit_data$Student <- as.numeric(credit_data$Student)
+credit_data$Default <- as.numeric(credit_data$Default)
+
+corr_matrix <- cor(credit_data)
+corrplot(corr_matrix, method = "ellipse", tl.col = "black")
+
+# Convert factor data from numeric back to factor for classification
+credit_data$Student <- factor(credit_data$Student, levels = c(0, 1))
+credit_data$Default <- factor(credit_data$Default, levels = c(0, 1))
+
+
+# Outlier Detection with Boxplots
+
+# Boxplot for 'Balance' variable
+ggplot(credit_data, aes(y = Balance)) +
+  geom_boxplot(fill = "lightcoral", color = "black") +
+  theme_minimal() +
+  labs(title = "Boxplot for Balance", y = "Balance")
+
+# Boxplot for 'Income' variable
+ggplot(credit_data, aes(y = Income)) +
+  geom_boxplot(fill = "lightgreen", color = "black") +
+  theme_minimal() +
+  labs(title = "Boxplot for Income", y = "Income")
+```
+### Split and Scale Data for Models
+```{r}
+# Split Data
+set.seed(123) # for reproducibility
+train_indices <- sample(1:nrow(credit_data), 0.8 * nrow(credit_data))
+train_data <- credit_data[train_indices, ]
+test_data <- credit_data[-train_indices, ]
+
+# Min-Max Scaling (using dplyr for convenience)
+train_data_scaled <- train_data %>%
+  mutate(
+    Balance = (Balance - min(Balance)) / (max(Balance) - min(Balance)),
+    Income = (Income - min(Income)) / (max(Income) - min(Income))
+  )
+
+test_data_scaled <- test_data %>%
+  mutate(
+    Balance = (Balance - min(train_data$Balance)) / (max(train_data$Balance) - min(train_data$Balance)),
+    Income = (Income - min(train_data$Income)) / (max(train_data$Income) - min(train_data$Income))
+  )
+```
+
+### Linear and ML Models (Logistic and Random Forest)
+```{r}
+# Load necessary libraries
+suppressPackageStartupMessages(library(randomForest))
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(pROC))
+
+# Train the Logistic Regression Model
+log_model <- glm(Default ~ Balance + Income + Student, data = train_data_scaled, family = binomial())
+
+# Train the Random Forest Model
+rf_model <- randomForest(Default ~ Balance + Income + Student, data = train_data_scaled, importance = TRUE)
+```
+
+### Predictions
+```{r}
+# Logistic Regression Predictions (probabilities)
+log_pred_prob <- predict(log_model, newdata = test_data_scaled, type = "response")
+
+# Logistic Regression Predictions (binary class)
+log_pred_class <- ifelse(log_pred_prob > 0.5, 1, 0)
+
+# Random Forest Predictions (binary class)
+rf_pred_class <- predict(rf_model, newdata = test_data_scaled)
+```
+
+### Performance Metrics and Comparison
+```{r}
+# Confusion Matrix for Logistic Regression
+log_cm <- confusionMatrix(factor(log_pred_class), factor(test_data_scaled$Default))
+print(log_cm$table)  # Print confusion matrix
+
+# Extract performance metrics for Logistic Regression
+log_accuracy <- log_cm$overall['Accuracy']          # Accuracy
+log_precision <- log_cm$byClass['Pos Pred Value']   # Precision
+log_recall <- log_cm$byClass['Sensitivity']         # Recall
+log_f1 <- log_cm$byClass['F1']                      # F1 Score
+
+cat("Logistic Regression Accuracy: ", log_accuracy, "\n")
+cat("Logistic Regression Precision: ", log_precision, "\n")
+cat("Logistic Regression Recall: ", log_recall, "\n")
+cat("Logistic Regression F1 Score: ", log_f1, "\n")
+
+# Confusion Matrix for Random Forest
+rf_cm <- confusionMatrix(factor(rf_pred_class), factor(test_data_scaled$Default))
+print(rf_cm$table)  # Print confusion matrix
+
+# Extract performance metrics for Random Forest
+rf_accuracy <- rf_cm$overall['Accuracy']          # Accuracy
+rf_precision <- rf_cm$byClass['Pos Pred Value']   # Precision
+rf_recall <- rf_cm$byClass['Sensitivity']         # Recall
+rf_f1 <- rf_cm$byClass['F1']                      # F1 Score
+
+cat("Random Forest Accuracy: ", rf_accuracy, "\n")
+cat("Random Forest Precision: ", rf_precision, "\n")
+cat("Random Forest Recall: ", rf_recall, "\n")
+cat("Random Forest F1 Score: ", rf_f1, "\n")
+```
+### Variable Importance Plot for Random Forest
+```{r}
+# Plot the variable importance for Random Forest
+varImpPlot(rf_model, main = "Variable Importance (Random Forest)")
+```
+
+Balance has a strong correlation to Default of about 0.7 as seen in the correlation plot and the variable importance plots for Random Forest. Student and Default do not have a strong correlation. Both Logistic and Random Forest classification models perform similarly well with F1 scores of 0.92.
+
+No missing data, no outliers.

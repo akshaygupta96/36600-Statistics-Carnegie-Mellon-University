@@ -1,0 +1,147 @@
+---
+title: "Lab: Numerical Optimization"
+author: "Akshay_Gupta_36-600_Lab_11R    "
+output: 
+  html_document:
+    toc: no
+    toc_float: no
+    theme: spacelab
+---
+
+## Data
+
+Let's generate the same data that we used to illustrate nonlinear regression:
+```{r}
+set.seed(555)
+x <- -5:5
+y <- 0.1*x^3 - 0.5*x + 2.1 + rnorm(length(x),mean=0,sd=0.5*(1+abs(x)))
+e <- 0.5*(1+abs(x))
+
+df <- data.frame("x"=x,"y"=y,"e"=e)
+
+suppressMessages(library(tidyverse))
+ggplot(data=df,mapping=aes(x=x,y=y)) +
+  geom_errorbar(aes(ymin=y-e, ymax=y+e), width=.1,color="blue") +
+  geom_point(color="firebrick")
+```
+
+# Questions
+
+## Question 1
+
+Assume that you know that a cubic polynomial is the correct function to use here, but you do not know what the true parameters are. (That means you should include the $x^2$ term in your curve-fitting analysis! Yes...you could just do polynomial regression here, like you did in the last lab, but we'll go ahead and try out numerical optimization.) Code an optimizer that will allow you to estimate the four coefficient terms of a cubic polynomial. Try not to let the true cubic polynomial coefficients above influence your initial guesses. Show the coefficients and plot your result. Make sure your plot looks good before you move on to Question 2: with four terms, it can be relatively easy to find a locally optimal result that is not the globally optimal result, i.e., it can be relatively easy to find a local minimum in $\chi^2$ that is not the global minimum. It's pretty easy to identify when this is the case when you plot functions...so always plot them! 
+```{r}
+# REPLACE ME WITH CODE
+fit.fun <- function(par, data) {
+  x <- data$x
+  y <- data$y
+  e <- data$e
+  y_pred <- par[1]*x^3 + par[2]*x^2 + par[3]*x + par[4] # For Cubic polynomial
+  # Calculate the weighted sum of squared residuals
+  return(sum((y - y_pred)^2 / e^2))
+}
+
+# Initial guesses for the coefficients (e.g., neutral values like 0)
+par <- c(0, 0, 0, 0) 
+
+# Optimize using `optim`
+op.out <- optim(par, fit.fun, data = df)
+
+# Display results
+op.out$value   # Minimum chi-square value
+op.out$par     # Estimated parameters (coefficients for the polynomial)
+
+# Generate predictions using optimized parameters
+df$predicted_y <- op.out$par[1]*df$x^3 + op.out$par[2]*df$x^2 + op.out$par[3]*df$x + op.out$par[4]
+
+# Plot the data with the fitted curve
+ggplot(data = df, aes(x = x, y = y)) +
+  geom_errorbar(aes(ymin = y - e, ymax = y + e), width = 0.1, color = "blue") +
+  geom_point(color = "firebrick") +
+  geom_line(aes(y = predicted_y), color = "green", size = 1) +
+  labs(title = "Fitted Cubic Polynomial with Optimized Coefficients",
+       x = "x", y = "y") +
+  theme_minimal()
+```
+
+## Question 2
+
+Take the minimum $\chi^2$ value that you found in Question 1 (it's in the output from `optim()`, even if you didn't explicitly display it) and perform a $\chi^2$ goodness of fit test. Recall that the null hypothesis is that the model is an acceptable one, i.e., that it plausibly replicates the data-generating process. Do you reject the null, or fail to reject the null? (Also recall that the number of degrees of freedom is $n-p$, where $n$ is the length of $x$ and $p$ is the number of coefficients in the cubic polynomial.)
+```{r}
+# REPLACE ME WITH CODE
+# Calculate the degrees of freedom and perform chi-square GOF test
+p_value <- 1 - pchisq(op.out$value, nrow(df) - 4) # Subtract 4 for the four parameters in the cubic polynomial
+p_value
+```
+```
+We fail to reject the null hypothesis, meaning the model is an acceptable fit.
+```
+
+## Data Part II
+
+Now let's say we have a dataset that looks like this:
+```{r}
+df <- read.csv("https://www.stat.cmu.edu/~pfreeman/optim_data.csv")
+
+suppressMessages(library(tidyverse))
+ggplot(data=df,mapping=aes(x=x,y=y)) +
+  geom_errorbar(aes(ymin=y-e, ymax=y+e), width=.1,color="blue") +
+  geom_point(color="firebrick")
+```
+
+## Question 3
+
+This will be a bit more free-form. Determine a model that might generate the observed data, optimize its parameters, and plot the result. Not sure where to start? Well, that's a common feeling in real-life analyses situations...
+```{r}
+# REPLACE ME WITH CODE
+#str(df)  # To check the structure of the data
+#summary(df)  # To get a summary of the data
+
+# Define the function to calculate the weighted sum of squared residuals (chi-square)
+fit.fun <- function(par, data) {
+  x <- data$x
+  y <- data$y
+  e <- data$e
+
+  a0 <- par[1]
+  a1 <- par[2]
+  a2 <- par[3]
+  a3 <- par[4]
+  
+  # Calculate predicted values using a sinusoidal model
+  y_pred <- a0 + a1 * sin(a2 * x + a3)
+  
+  # Calculate the weighted sum of squared residuals (chi-square)
+  chi_square <- sum(((y - y_pred) / e)^2)
+  return(chi_square)
+}
+
+# Initial guesses for the coefficients (e.g., neutral values like 0)
+par <- c(1, 1, 0.1, 0)  # a0, a1, a2, a3
+
+# Optimize using `optim` to minimize the chi-square
+op.out <- optim(par, fit.fun, data = df)
+
+# Display results
+min_chi <- op.out$value   # Minimum chi-square value
+cat("Minimum chi-square value:", min_chi, "\n")
+opt_params <- op.out$par     # Optimized parameters
+cat("Optimized parameters:", opt_params, "\n")
+
+# Generate predictions using optimized parameters
+df$predicted_y <- opt_params[1] + opt_params[2] * sin(opt_params[3] * df$x + opt_params[4])
+
+# Plot the data with the fitted sinusoidal curve
+library(ggplot2)
+ggplot(data = df, aes(x = x, y = y)) +
+  geom_errorbar(aes(ymin = y - e, ymax = y + e), width = 0.1, color = "blue") +
+  geom_point(color = "firebrick") +
+  geom_line(aes(y = predicted_y), color = "orange", size = 1) +
+  labs(title = "Fitted Sinusoidal Model with Optimized Parameters",
+       x = "x", y = "y") +
+  theme_minimal()
+
+# Perform Chi-square test (degrees of freedom = no. of data points - number of parameters)
+# p_value <- 1 - pchisq(op.out$value, nrow(df) - 4)  # Subtract the number of parameters (a0, a1, a2, a3)
+# cat("P value:", p_value, "\n")
+```
