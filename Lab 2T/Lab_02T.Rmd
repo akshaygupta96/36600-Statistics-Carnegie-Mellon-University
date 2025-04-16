@@ -1,0 +1,303 @@
+---
+title: 'Lab: Confidence Intervals'
+author: "Akshay_Gupta_36-600_Lab_02T"
+output:
+  html_document:
+    toc: no
+    theme: spacelab
+---
+
+We start by describing the functions that `R` provides that relate to probability distributions. We'll start by giving the name of one of these: `dnorm()`. (You may have noticed that I tack on parentheses after function names. This is to make it clear to the reader that what is being referred to is a function and not, say, a variable.) We can split the name into two parts:
+- `d`: this means that the function is returning $f_X(x)$, i.e., the probability density function value given the coordinate $x$; and
+- `norm`: this means that we are working with the normal distribution.
+
+First we'll list the names of some common distributions:
+
+| `R` Name | Distribution | Parameters (See Help Pages For More) |
+| --------- | ----------- | ------------------------------------ |
+| `binom` | binomial | `size` ($n$) and `prob` ($p$) |
+| `pois` | Poisson | `lambda` ($\lambda$) |
+| | |
+| `norm` | normal | `mean` ($\mu$) and `sd` ($\sigma$) |
+| `t` | t | `df` ($\nu$) |
+| `exp` | exponential | `rate` ($\beta$) |
+| `chisq` | chi-square | `df` ($\nu$) |
+
+And second we'll list the prefixes that you use to accomplish various tasks:
+
+| Prefix | What it Does |
+| ------ | ------------ | 
+| `d` | returns the pdf $f_X(x)$ or pmf $p_X(x)$ |
+| `p` | returns the cdf $F_X(x)$ |
+| `q` | returns the inverse cdf $F_X^{-1}(x)$ |
+| `r` | returns a random sample of data |
+
+What's the cdf? It's the *cumulative distribution function*, and we defined it in
+the notes as the probability that we sample a datum $\leq x$, where $x$ is the
+coordinate that we input into the cdf. For instance,
+```{r}
+pbinom(5,size=10,prob=0.5)
+```
+is the probability that we would observe 0, 1, 2, 3, 4, *or* 5 heads when flipping
+a fair coin 10 times, and
+```{r}
+pnorm(60,mean=75,sd=10)
+```
+is the probability of scoring 60 or less on a test whose true average score is 75,
+with standard deviation 10, *if* the test scores are truly normally distributed.
+
+(The inverse cdf is, well, the inverse function: given a probability between 0 and 1,
+what is the associated $x$ coordinate? For instance,
+```{r}
+qnorm(0.6,mean=75,sd=10)
+```
+tells us that on average, 60% of students will have a test score $\leq 77.53$.)
+
+Before we play, we need to point out one more thing. Recall that you can define a 
+vector using the `seq()` function. For instance,
+```
+seq(0,10,by=0.1)
+```
+defines the sequence {0,0.1,0.2,...,9.9,10}. As we'll see, if we want to plot
+distributions, defining a sequence is a good way to start.
+
+## Question 1
+
+Define an appropriate vector `x` and plot the probability density function $f_X(x)$ on the y-axis versus $x$ on the x-axis for a normal distribution with mean 5 and standard deviation 2. To give you a hint as to how "wide" to define the sequence of values `x`, know that in general, nearly all the probability content of a distribution lies within three standard deviations of the mean. Put a little cushion on this, and define the sequence to stretch over a range of four or five standard deviations on either side of the mean. Oh...for plotting, you can create a basic plot via `plot(x,y,typ="l")`. (Eventually we'll move to `ggplot()` for plotting, but let's start here.)
+```{r}
+mean=5
+sd=2
+x <- seq(mean-(5*sd),mean+(5*sd),by=0.2)
+y <- dnorm(x,mean,sd)
+plot(x,y,typ="l")
+```
+
+## Question 2
+
+Compute the probability that, given the distribution from Question 1, we would sample a datum that has a value greater than 4. (Recall the definition of the cdf, and make
+a necessary adjustment.)
+```{r}
+x2 <- 1-pnorm(4,5,2) #use 1-cdf
+x2
+```
+
+## Question 3
+
+Sample 100 data from the distribution defined in Question 1. Use `sum()` and a relational operator to display how many of the data are less than 5. Then incorporate `length()` to display the *proportion* of the data that are less than 5. Note that this proportion is a random variable: you will not get the same result as your neighbor, unless dumb luck intervenes, or...see Question 4.
+```{r}
+samp3 <- rnorm(100,5,2)
+data3 <- sum(samp3<5)               #no. of values in samp3 that are less than 5
+proportion3 <- data3/length(samp3)  #proportion of data3 numbers in samp3
+proportion3
+```
+
+## Question 4
+
+What you will find is that each time you run the code in the code chunk for Question 3, you will get a different result. The reason is that every time you sample, you get a different dataset. This affects reproducibility. Hence, when you sample data, you should always set a *random number seed* first. You do that in `R` by calling the function `set.seed()` and passing in a number (your choice) as an argument.
+
+Below, set the random number seed, sample five numbers from the distribution defined in Question 1, and display your sample. (You can do this by simply saying `x`, or by saying `print(x)`.) Then repeat the process with the same random number seed. You should see that your five numbers are exactly the same.
+```{r}
+set.seed(9)
+samp4 <- rnorm(5,mean,sd)
+samp4
+```
+
+## Question 5
+
+Plot the probability mass function $p_X(x)$ for a binomial distribution with $k = 20$ and $p = 0.5$. (Here, instead of using the `plot()` argument `typ="l"`, use `pch=19`.) Does it look like a normal distribution, at least in general shape? Next, make two more pmf plots, one with $p = 0.1$ and one with $p = 0.9$. Do these pmfs have a similar shape to a normal distribution? For the `x` in your plot, use `x <- 0:20`, i.e., `x` has values 0, 1, ..., 20.
+```{r}
+x5 <- 0:20
+a <- dbinom(x5,20,0.5)  #pmf binom is dbinom
+plot(x5,a,pch=19)       #looks like a normal dist
+b <- dbinom(x5,20,0.1)
+plot(x5,b,pch=19)       #looks skewed right
+c <- dbinom(x5,20,0.9)
+plot(x5,c,pch=19)       #looks skewed left
+```
+
+## Question 6
+
+Plot the probability mass function $p_X(x)$ for a Poisson distribution with $\lambda = 2$ and $\lambda = 10$. (Use the `plot()` argument `pch=19` again.) You should see that as $\lambda$ gets larger, the Poisson pmf adopts a shape more and more like that of a normal distribution. Here, use the same `x` as above (0:20).
+```{r}
+x6 <- 0:20
+p <- dpois(x6,2)
+plot(x6,p,pch=19) #right skewed
+q <- dpois(x6,10)
+plot(x6,q,pch=19) #looks like a normal dist
+```
+
+## Question 7
+
+Generate a vector with $n = 100$ data from a normal distribution with mean
+10 and standard deviation 2. (Remember to set a seed first!)
+
+Statisticians generally do not like working with entire datasets, when it is possible to make inferences with *summary statistics*. These statistics include ones like the *sample mean*, the *sample standard deviation*, the *sample median*, etc. Below, compute these statistics, via the `mean()`, `sd()`, and `median()` functions. Also, pass your vector to the `summary()` function, which gives a six-number summary showing the minimum value (which you can also find with the function `min()`), the maximum value (`max()`), the mean and median, and the 25th and 75th percentiles.
+```{r}
+set.seed(54)
+x7 <- rnorm(100,10,2)
+mean(x7)
+sd(x7)
+median(x7)
+summary(x7)
+```
+
+## Question 8
+
+Construct a 95% two-sided confidence interval for the mean of the distribution that 
+you just sampled data from above. (Forget that you know the mean is 10.) To do this,
+utilize the pseudocode from the notes:
+```
+f <- function(theta,[arguments])
+{
+  [cumulative distribution function]([arguments]) - q
+}
+uniroot(f,interval=[interval],[arguments],q=1-alpha/2)$root
+uniroot(f,interval=[interval],[arguments],q=alpha/2)$root
+```
+Here, `theta` is $\mu$, or `mu`, the mean of a normal distribution. A few more details:
+
+1. We will assume that the standard deviation is *known* and is equal to 2. That
+means that the sample mean $\bar{X}$ is normally distributed (i.e., use `pnorm()`) with
+mean $\mu$ (i.e., use `mean=mu` as one argument) and standard deviation $2/\sqrt{n} = 0.2$ (i.e., use `sd=0.2` as the other argument).
+2. The range of possible values for $\mu$ is technically infinite, so use a wide range
+for `interval` that includes negative and positive values (i.e., `interval=c(-100,100)`).
+3. The additional arguments to `f()` are the variables that you need to get the
+function to run. Since we hardwired `sd=0.2`, we don't need $\sigma$ or $n$...but we
+do need `q` and we need the observed value of $\bar{X}$!
+4. Our confidence coefficient is 0.95, so $\alpha = 0.05$.
+
+If you run into issues, call me or a TA over!
+```{r}
+alpha <- 0.05
+# FILL ME IN
+x8 <- rnorm(100,10,2)
+sd=0.2
+f <- function(mu,xbar,q)
+{
+  pnorm(xbar,mean=mu,sd) - q
+}
+uniroot(f,interval = c(-100,100),xbar=mean(x8),q=1-alpha/2)$root
+uniroot(f,interval = c(-100,100),xbar=mean(x8),q=alpha/2)$root
+
+#xbar is your statistic. mu is what you are trying to infer. So f <- function(mu,xbar,q).
+#uniroot() outputs a list of values. You are only interested in the list element root, which contains the inferred bound for mu (lower or upper).
+```
+
+## Question 9
+
+Confirm your result in Question 8 using the `R` function `z.test()`.
+
+But...there is no `R` function called `z.test()`, at least not in the base-`R` 
+distribution. To run a $z$-test, first go to the cursor in the Console pane and type `install.packages("BSDA")`. Then uncomment `#library(BSDA)` below in the code chunk,
+and code and run `z.test()` (while noting that one of the arguments is `sigma.x=2`).
+The confidence interval will be output under the line `95 percent confidence interval:`.
+Ignore any other output.
+```{r}
+library(BSDA)
+# FILL ME IN
+z.test(x8,sigma.x=2)
+
+```
+
+## Question 10
+
+Sometimes we don't want to construct a two-sided interval...sometimes we just want
+a lower or upper bound on the parameter of interest $\theta$. Let's suppose that here,
+we wish to place a 95% one-sided upper bound on $\mu$ for a normal distribution, given
+our current dataset.
+
+What would we do differently here, compared to what we did in Question 8? Not much,
+actually. All we need to do is eliminate the first call to `uniroot()` and change
+`q = alpha/2` in the second call to `q=alpha`. Do this here, and derive the upper bound.
+(You can confirm your result by calling `z.test()` with `sigma.x=2` and 
+`alternative="less"`.)
+```{r}
+alpha <- 0.05
+# FILL ME IN
+x10 <- rnorm(100,10,2)
+sd=0.2
+f <- function(mu,xbar,q)
+{
+  pnorm(xbar,mean=mu,sd) - q
+}
+#uniroot(f,interval = c(-100,100),xbar=mean(x10),q=1-alpha/2)$root, lower bound is not needed
+uniroot(f,interval = c(-100,100),xbar=mean(x10),q=alpha)$root
+z.test(x10,sigma.x=2,alternative="less")
+
+```
+
+## Question 11
+
+Over the last ten years, you have observed this many eruptions from a particular volcano:
+```
+0 2 1 0 1 2 0 0 1 1
+```
+You assume the data are Poisson distributed. What is a 95% two-sided confidence 
+interval for the mean of this distribution? (That mean is conventionally denoted
+$\lambda$, or `lambda`.)
+
+We said we'd provide the details on sampling distributions. We did not lie.
+
+1. The statistic that you would use is the *sum* of the data (which has value 8).
+2. The sampling distribution for this statistic is a Poisson distribution with
+mean $10 \lambda$.
+
+So how would you change your code in Question 8?
+
+1. It's a Poisson distribution: use `ppois()`.
+2. The arguments to `ppois()` are the sum (call this `x.sum`) and the parameter value
+(call this `lambda=nlambda`). Change `mu` in the call to `f()` with `nlambda`.
+3. `nlambda` cannot be negative, so use, e.g., `interval=c(0,100)`.
+4. At the end of each call to `uniroot()`, tack on `/10` so that we get an interval
+for $\lambda$ rather than an interval for $10\lambda$.
+
+In the end, your interval should be $[0.412,1.567]$.
+
+```{r}
+x11 <- c(0,2,1,0,1,2,0,0,1,1)
+alpha <- 0.05
+# FILL ME IN
+#Poisson distributed ppois(x.sum,lambda=nlambda)
+#95% two-sided confidence interval for the mean of this distribution
+x11 <- rpois(100,10)
+x.sum=8
+f <- function(nlambda,xbar,q)
+{
+  ppois(x.sum,lambda=nlambda) - q
+}
+uniroot(f,interval = c(0,100),xbar=mean(x11),q=1-alpha/2)$root/10
+uniroot(f,interval = c(0,100),xbar=mean(x11),q=alpha/2)$root/10
+```
+
+## Question 12
+
+Sample 100,000 data from the vector 1:100000, with replacement, and count up the number of unique values that you observe (and divide this sum by 100000). This will provide you with the approximate probability that in any one bootstrap dataset you will observe a given row from your original dataset one or more times. (The answer you should find is about 0.63.)
+```{r}
+# FILL ME IN
+x12 <- sample(100000, 100000, replace = TRUE)
+u12 <- unique(x12)  #unique values in x12
+length(u12)/100000  #the number of unique values/100000
+```
+
+## Question 13
+
+In the notes, we computed a bootstrap confidence interval for the population mean
+$\mu$ using the sample mean $\bar{X}$ as our statistic. What happens if we use the
+sample median instead? (The relevant `R` function is `median()`.) Is the new bootstrap confidence interval wider? (Wider means that when we use this statistic, we are more uncertain about the mean!) Recall that the interval found in the notes is 
+$[4.527,5.268]$. Note that all you need to do here is copy the code from the notes
+and switch out the mean for the median.
+```{r}
+set.seed(101)
+x <- rnorm(20,mean=5,sd=1)
+# FILL ME IN
+set.seed(101)
+k <- 10000
+x.bar <- rep(NA,k)
+for ( ii in 1:k ) {
+s <- sample(length(x),length(x),replace=TRUE)
+x.bar[ii] <- median(x[s])
+}
+quantile(x.bar,probs=c(0.025,0.975))
+#The new bootstrap confidence interval is wider, more uncertain about the mean.
+```
+

@@ -1,0 +1,204 @@
+---
+title: "Lab: Linear Regression"
+author: "Akshay_Gupta_36-600_Lab_05R"
+output: 
+  html_document:
+    toc: no
+    toc_float: no
+    theme: spacelab
+---
+
+To answer the questions below, it will help you to refer to the class notes and to Chapter 3 of ISLR (and especially Section 6).
+
+## Data
+
+We'll begin by importing the heart-disease dataset, removing the `id` column, and log-transforming the response variable, `Cost`. We also make `Drugs`
+and `Complications` factor variables.
+```{r}
+df <- read.csv("http://www.stat.cmu.edu/~pfreeman/heart_disease.csv",stringsAsFactors=TRUE)
+df <- df[,-10]
+w  <- which(df$Cost > 0)
+df <- df[w,]
+df$Cost          <- log(df$Cost)
+df$Complications <- factor(df$Complications)
+df$Drugs         <- factor(df$Drugs)
+summary(df)
+```
+
+## Question 1
+
+Split the data into training and test sets. Call these `df.train` and `df.test`. Assume that 70% of the data will be used to train the linear regression model. Recall that
+```
+s <- sample(nrow(df),round(0.7*nrow(df)))
+```
+will randomly select the rows for training. Also recall that
+```
+df[s,] and df[-s,]
+```
+are ways of filtering the data frame into the training set and the test set, respectively. (Remember to set the random number seed!)
+```{r}
+# FILL ME IN
+set.seed(123)
+s <- sample(nrow(df),round(0.7*nrow(df)))
+df.train <- df[s,]
+df.test <- df[-s,]
+```
+
+---
+
+Before moving on to performing linear regression, you should learn a bit about model syntax. Here we show this syntax within the context of a simple analysis:
+```
+> lm.out <- lm(Cost~.,data=df.train)
+> summary(lm.out)
+> Cost.pred <- predict(lm.out,newdata=df.test)
+```
+
+Let's break this down. 
+
+First, we call `lm()`, which stands for "linear model." For our model, we decide to regress the variable `Cost` onto all the predictor variables (represented by the "."). (Note: that's a tilde before the period, not a minus sign! See below for what we would do if we don't want to include all the predictor variables when learning the model.) `R` doesn't know where these predictor variable are, so we specify that via the `data=` argument. We save the output as `lm.out`.
+
+Second, we call the `summary()` function. `summary()` is a general function whose behavior depends on the class of object passed to it. If the object is a data frame, you get a numerical summary. (Try it with `df.train`!) If the object is of class `lm`, then you get entirely different output. (Basically, you can think of it as `summary()` checking for the class, then calling another function depending on what the class is. Here, `summary()` invisibly redirects `lm.out` to `summary.lm()`.) The `summary()` function provides the $p$-values for the individual coefficients and for the $F$ statistic, plus the adjusted $R^2$, etc.
+
+Third, we use the model embedded within `lm.out` to generate predictions for the mass for new data (the test data). `predict()` behaves like `summary()`; here, it redirects the arguments to `predict.lm()`.
+
+Now, about the model syntax. For simplicity, assume that we have a data frame `p`, with columns `a`, `b`, and `c`, and `r` (the response variable).
+
+- To include `a` only: `lm(r~a,data=p)`
+- To include `a` and `c` only: `lm(r~a+c,data=p)` or `lm(r~.-b,data=p)`
+- To indicate that all variables other than `r` are predictor variables: `lm(r~.,data=p)`
+- To regress through the origin: `lm(r~.-1,data=p)`
+- To include `a`, `b`, and their interaction: `lm(r~a+b+a:b,data=p)`
+
+---
+
+## Question 2
+
+Perform a multiple linear regression analysis. Use the `summary()` function to examine the output. Do you conclude that the linear model is informative or uninformative?
+```{r}
+# FILL ME IN
+summary(df.train)
+lm.out <- lm(Cost~.,data=df.train)
+summary(lm.out)
+Cost.pred <- predict(lm.out,newdata=df.test)
+```
+```
+The linear model looks informative since the R-squared value is 0.615.
+```
+
+## Question 3
+
+Interpret the linear regression model. Specifically: which three variables appear to be, in *relative terms*, the three that have the most "predictive ability"?
+(Do *not* include the `(Intercept)` here...we usually just ignore it!)
+```
+Interventions, Comorbidities, and Duration are the three variables that have the most "predictive ability".   
+```
+
+## Question 4
+
+Does the assumption that the data are normally distributed around the regression line hold here? (To be clear: linear modeling is fine if the assumption of normality does not hold, so long as the average value of the error term $\epsilon$ is zero and the variance of $Y \vert x$ is $\sigma^2$. All that non-normality means is that you cannot "trust" the hypothesis tests in the summary output in, e.g., the third and fourth columns of the coefficients table.) Make a histogram of your fit residuals, $Y_i - \hat{Y}_i$, for the *test-set data only*.
+
+The following code may help you. To generate predictions for the test-set response values, take your `lm()` output and use it as follows, e.g.:
+```
+Cost.pred <- predict(lm.out,newdata=df.test)
+```
+The data frame for plotting is
+```
+df.plot <- data.frame("x"=df.test$Cost-Cost.pred)
+```
+Pass that data frame into `ggplot()` and make a histogram.
+```{r fig.align='center',fig.width=4,fig.height=4}
+suppressMessages(library(tidyverse))
+# FILL ME IN
+Cost.pred <- predict(lm.out,newdata=df.test)
+df.plot <- data.frame("x"=df.test$Cost-Cost.pred)
+df.plot %>% ggplot(.,mapping=aes(x=x))+geom_histogram(fill="orchid",bins=50)
+```
+```
+The assumption that the data are normally distributed around the regression line holds here.
+```
+
+## Question 5
+
+Use a Shapiro-Wilk test to decide, using numeric evidence, whether the residuals are 
+normally distributed. What do you conclude? (Note: you will pass `df.plot$x` into the test.)
+```{r}
+# FILL ME IN
+shapiro.test(df.plot$x)$p.value
+```
+```
+The p values is greater than 0.05 which means that the residuals are normally distributed.
+```
+
+## Question 6
+
+Is the assumption of constant variance (assumption 2 in the notes) met with these data?
+Plot the model residuals versus the predicted model values, for the test set.
+The data frame for plotting is
+```
+df.plot <- data.frame("x"=Cost.pred,"y"=df.test$Cost-Cost.pred)
+```
+Pass this into `ggplot()` and make a scatter plot of $y$ vs. $x$.
+```{r fig.align='center',fig.width=4,fig.height=4}
+# FILL ME IN
+df.plot <- data.frame("x"=Cost.pred,"y"=df.test$Cost-Cost.pred)
+#df.plot %>% ggplot(.,mapping=aes(x=x))+geom_histogram(fill="orange",bins=50)
+df.plot %>% ggplot(.,mapping=aes(x=x,y=y))+geom_point(col="orange")+xlab("Cost.pred")+ ylab("y")
+```
+
+## Question 7
+
+While we did not explicitly mention this in the lecture notes, there are, as you might 
+expect, off-the-shelf statistical tests available for assessing whether or not our
+data exhibit non-constant variance. One such test is the so-called *Breusch-Pagan test*.
+The null hypothesis for this test is the variance is constant as a function of the
+predicted response values.
+
+To run this test in `R`: load the `car` library (after installing it if necessary) and
+pass the linear regression output that you generated in Q2 to the function `ncvTest()`.
+Interpret your result.
+```{r}
+suppressMessages(library(car))
+# FILL ME IN
+ncvTest(lm.out)
+```
+```
+The p value is less than 0.05. We reject the null hypothesis that the variance is constant.
+```
+
+## Question 8
+
+Create a diagnostic plot showing the predicted log-cost ($y$-axis) versus the observed log-cost ($x$-axis). As in the example in the notes, make the limits the same along both axes (use `xlim()` and `ylim()`) and draw a diagonal line from lower-left to upper-right (look up `geom_abline()`). Where does the linear model tend to break down the most?
+
+The following code may help you. The data frame for plotting is
+```
+df.plot <- data.frame("x"=df.test$Cost,"y"=Cost.pred)
+```
+```{r fig.align='center',fig.width=4,fig.height=4}
+# FILL ME IN
+df.plot <- data.frame("x"=df.test$Cost,"y"=Cost.pred)
+df.plot %>% ggplot(.,mapping=aes(x=x,y=y))+geom_point(col="skyblue")+geom_abline(col="black")+xlab("Cost")+ ylab("Cost.pred")+xlim(0,15)+ylim(0,15)
+```
+```
+The linear model tends to break down the most outside the 5-10 range (0-5 and above 10).
+```
+
+## Question 9
+
+Use the `vif()` function of the `car` package (already loaded!) to check for possible multicollinearity. (Again, you are passing in your linear regression output.) Does there appear to be issues with multicollinearity with these data? There is no need to mitigate it if you see it.
+```{r}
+# FILL ME IN
+vif(lm.out)
+```
+```
+There does not seem to be issues with multicollinearity as the vif values are less than 5.
+```
+
+## Question 10
+
+Compute the mean-squared error for the linear model. (Remember: MSEs are computed on the test-set data only.) Note that the square root of this quantity is the average distance between the predicted log-cost and the observed log-cost. We may come back to these data later and see if a machine-learning model does a better job than linear regression in predicting log-cost.
+```{r}
+# FILL ME IN
+y.hat <- predict(lm.out,newdata=df.test)
+mean((df.test$Cost-y.hat)^2)
+```
+

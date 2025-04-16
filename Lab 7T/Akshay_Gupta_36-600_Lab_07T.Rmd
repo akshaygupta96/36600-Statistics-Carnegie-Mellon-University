@@ -1,0 +1,172 @@
+---
+title: "Lab_14T"
+author: "Akshay_Gupta_36-600_Lab_07T"
+date: "Fall 2023"
+output:
+  html_document:
+    toc: no
+    toc_float: no
+    theme: spacelab
+  pdf_document:
+    toc: no
+---
+
+## Data: Part I
+
+We'll begin by importing the breast cancer dataset we've looked at previously:
+```{r}
+suppressMessages(library(tidyverse))
+df        <- read.csv("http://www.stat.cmu.edu/~pfreeman/breastcancer.csv",stringsAsFactors=TRUE)
+df        <- df[,c(1,16)]
+names(df) <- c("x","Y")
+```
+We retain `Diagnosis` as our categorical predictor variable (now dubbed `x`) and `Worst.Smoothness` as
+the response variable (now dubbed `Y`).
+
+## Question 1
+
+Create a grouped boxplot and make a mental note as to whether or not it appears that the true means for each group are different. 
+```{r fig.align='center',fig.height=4,fig.width=4}
+# FILL ME IN
+#head(df,25)
+ggplot(df, aes(x=as.factor(x), y=Y))+geom_boxplot(fill="orange")+labs(x = "x (Group)", y="Y (Value)")
+```
+
+## Question 2
+
+Now let's determine if the assumptions underlying the use of the two-sample $t$ test hold...specifically,
+that the data within the individual groups are normally distributed with constant variance $\sigma^2$.
+
+First, run a `shapiro.test()` on the data of groups `B` and `M`. If the $p$-value is less than $\alpha = 0.05$,
+we reject the null hypothesis that the data are normally distributed. (However, even if we reject the null hypothesis, we will still use these data below for illustrative purposes!)
+
+Recall that in `dplyr` you can do the test as follows:
+```
+df %>% filter(.,x=="<INSERT CATEGORY NAME>") %>% select(.,Y) %>% pull(.) %>% shapiro.test(.)
+```
+The `pull()` function, which is new, coerces a column of numbers in a data frame to being "just" a 
+vector...which we need to do because the Shapiro-Wilk test function doesn't like data frames as inputs.
+
+Go ahead and perform the test here, then state a conclusion.
+```{r}
+# FILL ME IN
+df %>% filter(.,x=="B") %>% select(.,Y) %>% pull(.) %>% shapiro.test(.)
+df %>% filter(.,x=="M") %>% select(.,Y) %>% pull(.) %>% shapiro.test(.)
+```
+```
+We reject the null hypothesis for both B and M.
+```
+
+Second, run the `leveneTest()` (from the `car` package). Here, you need not separate the data...you can
+simply input a model formula (`Y~x`) and specify `data=df`. If the $p$-value is less than $\alpha = 0.05$,
+we reject the null hypothesis that the variances are the same across groups. What do you conclude?
+(We should note a rule of thumb that you might see: two-sample $t$ tests and ANOVA are robust to
+heterogeneity of variance so long as the largest variance is no more than four times the smallest variance.
+So even if we reject the null here, we might very well still be able to pursue ANOVA.)
+```{r}
+# FILL ME IN
+suppressMessages(library(car))
+leveneTest(Y~x, data=df)
+```
+```
+We fail to reject the null hypothesis.
+```
+
+## Question 3
+
+Now, run a two-sample $t$ test and make a conclusion about whether the response values for each group
+(`B` and `M`) have the same mean. Note that like for Levene's test, the `t.test()` will allow you to
+input a model formula, so you don't need to split up the data yourself. The null hypothesis, by the way,
+is that the difference in means is equal to zero.
+```{r}
+# FILL ME IN
+t.test(Y~x, data=df)
+```
+```
+We reject the null hypothesis.
+```
+
+## Data: Part II
+
+We'll continue by importing the hospital cost dataset we've looked at previously:
+```{r}
+df        <- read.csv("http://www.stat.cmu.edu/~pfreeman/hospital_cost.csv",stringsAsFactors=TRUE)
+df        <- df[,c(5,1)]
+names(df) <- c("x","Y")
+df$x      <- factor(df$x)
+w         <- which(df$Y==0)
+df        <- df[-w,]
+df$Y      <- log10(df$Y)
+```
+We retain `Drugs` as our categorical predictor variable (now dubbed `x`) and `Cost` as
+the response variable (now dubbed `Y`). The groups for `x` are "0", "1", and "2". Note
+that we logarithmically transform `Y` after removing values of zero.
+
+## Question 4
+
+Repeat Q1 here: create a grouped boxplot and make a mental note as to whether or not it appears 
+that the true means for each group are different. 
+```{r fig.align='center',fig.height=4,fig.width=4}
+# FILL ME IN
+#head(df,25)
+ggplot(df, aes(x=as.factor(x), y=Y))+geom_boxplot(fill="deepskyblue")+labs(x = "x (Group)", y="Y (Value)")
+```
+
+## Question 5
+
+Repeat Q2 here: run three Shapiro-Wilk tests and one Levene's test, and state which underlying assumptions
+of the ANOVA model hold here, and which do not. If Levene's test indicates that the variances are truly unequal, compute the variances for each sample and see whether or not the rule-of-thumb given in Q2 can
+be applied here. (To compute variances, just use the same "codeflow" as you
+used for the Shapiro-Wilk test but put the `var()` function at the end.)
+```{r}
+# FILL ME IN
+df %>% filter(.,x=="0") %>% select(.,Y) %>% pull(.) %>% shapiro.test(.)
+df %>% filter(.,x=="1") %>% select(.,Y) %>% pull(.) %>% shapiro.test(.)
+df %>% filter(.,x=="2") %>% select(.,Y) %>% pull(.) %>% shapiro.test(.)
+
+leveneTest(Y~x, data=df)
+
+df %>% filter(.,x=="0") %>% select(.,Y) %>% pull(.) %>% var(.)
+df %>% filter(.,x=="1") %>% select(.,Y) %>% pull(.) %>% var(.)
+df %>% filter(.,x=="2") %>% select(.,Y) %>% pull(.) %>% var(.)
+```
+```
+We fail to reject the null hypothesis for the Shapiro-Wilk tests and reject the null hypothesis for the Leven test.
+```
+
+## Question 6
+
+Show the summary output from regressing the variable `Y` upon `x`. What is the estimated mean response
+for each group?
+```{r}
+# FILL ME IN
+lm <- lm(Y~x,data=df)
+summary(lm)
+```
+```
+The estimate mean responses are 2.66656 fpr Group "0", 2.97242 for Group "1", and 3.03095 for Group "2".
+```
+
+## Question 7
+
+Now pass the output from your call to linear regression into the `anova()` function. What is the hypothesis
+test statistic value and the $p$-value, and what conclusion do you draw?
+```{r}
+# FILL ME IN
+anova(lm)
+```
+```
+The hypothesis test statistic value is 0.05 and the p-value is less than that, so we reject the null hypothesis and conclude that at least one of the means is different from the others.
+```
+
+## Question 8
+
+Here, pass the output from `aov(Y~x,data=df)` to the `TukeyHSD()` function and state a conclusion:
+which group or groups differ from the others? Which do we conclude have the same means?
+```{r}
+# FILL ME IN
+TukeyHSD(aov(Y~x,data=df))
+```
+```
+Group 0 has a different mean from group 1 and from group 2. The means in groups 1 and 2 are not significantly different.
+```

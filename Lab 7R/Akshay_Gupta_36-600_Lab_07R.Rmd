@@ -1,0 +1,132 @@
+---
+title: "Lab: Random Effects"
+author: "Akshay_Gupta_36-600_Lab_07R"
+output:
+  html_document:
+    toc: no
+    toc_float: no
+    theme: spacelab
+  pdf_document:
+    toc: no
+---
+
+Today's lab will be relatively short, so that you can turn it in and head off to fall break.
+
+## Data
+
+Here we read in the sleep study data from Project 1 and we retain three variables:
+`cohort` and `term_gpa` as predictors, and `TotalSleepTime` (renamed `sleep`) as the 
+response.
+```{r}
+suppressMessages(library(tidyverse))
+df        <- read.csv(url("https://www.stat.cmu.edu/~pfreeman/cmu-sleep.csv"))
+df$cohort <- factor(df$cohort)
+df %>% select(.,cohort,TotalSleepTime,term_gpa) -> df
+names(df)[2] <- "sleep"
+summary(df)
+```
+
+Note that in this lab, we are not going to split the data into training and test sets.
+
+## Question 1
+
+Let's first assume that we regress `sleep` upon `cohort`. Since the cohorts that appear
+in the study are a randomly selected subset of all possible cohorts, pursuing learning a
+random effects model is appropriate (as opposed to a one-way ANOVA model). Learn an 
+appropriate model using `lmer()` and pass the output to `summary()`. Display the five
+intercepts for the five cohorts. (Hint: utilize one of the functions shown in the notes,
+one specifically used with the Palmer Penguin data.) Last, what is the
+within-cohort correlation? (This last part involves extracting numbers from the
+`summary()` output and "doing math" as opposed to making further function calls.) Is
+this a weak, medium, or strong correlation? (Use the internet to make that judgement. Note
+that no two tables mapping correlation coefficients to adjectives seem to match.)
+```{r}
+suppressMessages(library(lme4))  # uncomment once the library is installed
+# FILL ME IN WITH CODE
+lm.out <- lmer(sleep~(1|cohort), data=df)
+summary(lm.out)
+coef(lm.out)$cohort
+```
+```
+The correlation is weak (0.07).
+```
+
+## Question 2
+
+Now let's look at `term_gpa`. Learn a simple linear regression model that has `sleep`
+as the response variable and `term_gpa` as the predictor variable, and overlay the model
+on a plot of `sleep` versus `term_gpa`. Also, determine the AIC value for the model.
+```{r fig.align='center',fig.height=4,fig.width=4}
+# FILL ME IN WITH CODE
+lm <- lm(sleep ~ term_gpa, data = df)
+AIC_lm <- AIC(lm)
+print(AIC_lm)
+#summary(lm)
+
+ggplot(df, aes(x = term_gpa, y = sleep)) +  geom_point(col="deepskyblue") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +  # Regression line
+  labs(x = "Term GPA",y = "Sleep")
+```
+
+## Question 3
+
+Now implement a mixed effects model with `term_gpa` as the fixed effect and `cohort` as
+the random effect, with random intercepts (but same slopes). Output the linear model coefficients for each cohort. (Mentally confirm that indeed, the intercepts are different but the slopes are the same.) And, as you did in Q2, record the AIC value.
+
+No plot is necessary, for now.
+```{r}
+# FILL ME IN WITH CODE
+lm.out3 <- lmer(sleep~term_gpa+(1|cohort), data=df)
+summary(lm.out3)
+AIC_lm.out3 <- AIC(lm.out3)
+print(AIC_lm.out3)
+```
+
+## Question 4
+
+Repeat Q3, but now have random slopes with the same intercept.
+```{r}
+# FILL ME IN WITH CODE
+lm.out4 <- lmer(sleep~term_gpa+(0+term_gpa|cohort), data=df)
+summary(lm.out4)
+AIC_lm.out4 <- AIC(lm.out4)
+print(AIC_lm.out4)
+```
+
+## Question 5
+
+Repeat Q3, but now have random slopes *and* intercepts.
+```{r}
+# FILL ME IN WITH CODE
+lm.out5 <- lmer(sleep~term_gpa+(term_gpa|cohort), data=df)
+summary(lm.out5)
+AIC_lm.out5 <- AIC(lm.out5)
+print(AIC_lm.out5)
+```
+
+## Question 6
+
+Select the best model from among those in Q2-Q5 (i.e., the one with the lowest AIC value).
+Plot the data again, and overlay the best model...note that this may require you to make
+five separate calls to `geom_abline()`. Note that to access the slopes and intercepts, 
+you would use, e.g.,
+```
+coefs <- coef(lmer.out)$cohort
+coefs[1,1] # first row, first column -- intercept of first cohort
+coefs[3,2] # third row, second column -- slope of third cohort
+etc.
+```
+In the end, your plot may not show five separate lines, which is fine, because the
+`lac1` and `lac2`, and `uw1` and `uw2`, cohorts had very similar data.
+```{r fig.align='center',fig.height=4,fig.width=4}
+# FILL ME IN WITH CODE
+coefs <- coef(lm.out3)$cohort # Using model in Question 3
+
+ggplot(df, aes(x=term_gpa, y=sleep, color=cohort)) +
+  geom_point() + labs(title="Sleep vs Term GPA with Best Model Overlay", x="Term GPA", y="Sleep") +
+  geom_abline(slope=coefs[1, 2], intercept=coefs[1, 1], color="deepskyblue") +  # First cohort
+  geom_abline(slope=coefs[2, 2], intercept=coefs[2, 1], color="red") +   # Second cohort
+  geom_abline(slope=coefs[3, 2], intercept=coefs[3, 1], color="green") + # Third cohort
+  geom_abline(slope=coefs[4, 2], intercept=coefs[4, 1], color="purple") + # Fourth cohort
+  geom_abline(slope=coefs[5, 2], intercept=coefs[5, 1], color="orange") # Fifth cohort
+```

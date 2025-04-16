@@ -1,0 +1,239 @@
+---
+title: "Lab: Exploratory Data Analysis"
+author: "Akshay_Gupta_36-600_Lab_03R"
+output: 
+  html_document:
+    toc: no
+    toc_float: no
+    theme: spacelab
+---
+
+In today's lab, you were perform exploratory data analysis on a dataset related to heart disease and the cost billed to insurance.
+
+# Data
+
+Your first job is to retrieve the dataset, `heart_disease.csv`, from the course `Canvas` site. You will find a link this dataset on the lab module page.
+
+Examine the downloaded data file. Think about how you would input these data (hint: do any strings represent factor variables? do you need to specify column types? etc.). Then...
+
+# Questions
+
+## Question 1
+
+Input the data into `R`, and into a data frame named `df`.
+```{r}
+# FILL ME IN
+getwd() #check working directory
+df <- read.csv("heart_disease.csv")
+head(df) #show headers + 6 rows
+dim(df)
+```
+
+## Question 2
+
+Summarize the data, via a base-`R` function mentioned in today's notes. Scan the output to see if there are missing data or if anything appears weird.
+```{r}
+# FILL ME IN
+summary(df)
+#summarize(df)
+```
+
+## Question 3
+
+One thing you might have noticed in Question 2 is that `Drugs` apparently can only take on the values 0, 1, and 2, and that `Complications` is either 0 or 1. This hints that these are actually factor variables, and not numeric. For purposes of visualization and analysis, it can be helpful to forcibly transform these variables from being of `numeric` type to being of `factor` type. You would do that as follows:
+```
+df$Drugs <- factor(df$Drugs)
+```
+Convert both variables, and re-display the summary.
+```{r}
+# FILL ME IN
+df$Drugs <- factor(df$Drugs)
+df$Complications <- factor(df$Complications)
+summary(df)
+```
+
+## Question 4
+
+Look at your summary output again. Are there any obviously non-informative columns? If so, remove them here. For instance, use `dplyr` functions to remove the offending column(s), and save the output to `df`. Note: to remove a single column, you can name it and put a minus sign in front. Then show the names of the columns of `df` so you can convince yourself that the offending column(s) are gone.
+```{r}
+suppressMessages(library(tidyverse))
+
+# FILL ME IN
+df <- select(df,-id)
+head(df)
+```
+
+---
+
+When performing exploratory data analysis and reporting the results to others, it
+can be quite helpful to employ "faceting" to save space. (It makes the plots smaller,
+but it also makes them easier to compare against each other.)
+
+In Question 5 below, you will create faceted plots for all the truly quantitative
+variables (meaning, everything but `Gender`, `Drugs`, and `Complications`). The
+typical approach is to utilize histograms. But, how do you create the plots?
+
+First, you have to `select()` the columns of data you wish to visualize (while
+selecting either "positively" or "negatively"...whichever leads to less typing!),
+to pass the selected columns to the `gather()` function, and save the output from
+`gather()` (say, as `df.quant`).
+
+What `gather()` does is output a data frame whose first column, `key`, is a factor
+variable with column names, and whose second column, `value`, contains the variable 
+values. For instance, it turns
+```
+a   b   c
+1   2   3
+4   5   6
+```
+into
+```
+key   value
+a     1
+a     4
+b     2
+b     5
+c     3
+c     6
+```
+
+The next step would be to take the output from `gather()` (saved here as
+`df.quant`) and simply histogram it, in the manner we do in the lecture notes...but
+we need to add one additional line:
+```
+  ... +
+  geom_histogram(col="burlywood") +  # or whatever color and bin size, etc.
+  facet_wrap(~key,scales='free_x')
+```
+
+About the `scales` argument: `free_x` means "let the plot limits along the $x$-axis
+differ in each histogram but keep the $y$-axis limits fixed," `free_y` means the
+opposite, and `free` means "let the plot limits along each axis differ." Play
+with this to see which allows for the best pictorial representation of the 
+distributions of variable values.
+
+---
+
+## Question 5
+
+Create a faceted histogram for all the variables that are truly quantitative, meaning leave `Gender`, `Drugs`, and `Complications` out. Try `scales="free_x"` and 
+`scales="free"` and keep the one that leads to "better" results. (Note that when
+constructing the histograms, the `x` variable in the call to `aes()` is `value`.)
+```{r}
+# FILL ME IN
+df %>% select(.,-Gender,-Drugs,-Complications) %>% gather(.) %>% ggplot(.,mapping=aes(x=value))+geom_histogram(fill="orchid",bins=30)+facet_wrap(~key,scales='free')
+
+```
+
+## Question 6
+
+Look at `Cost`: it is right skew. Make a histogram of the base-10 logarithm of `Cost`, i.e., do
+```
+hist(log10(df$Cost),col="blue")   # quick'n'dirty, no ggplot needed here!
+```
+Does this look more symmetric? If yes, replace the `Cost` column, i.e., do
+```
+df %>% filter(.,Cost>0) -> df
+df$Cost = log10(df$Cost)
+```
+```{r}
+# FILL ME IN
+hist(log10(df$Cost),col="green")
+df %>% filter(.,Cost>0) -> df
+df$Cost = log10(df$Cost)
+#df %>% select(.,-Gender,-Drugs,-Complications) %>% gather(.) %>% #ggplot(.,mapping=aes(x=value))+geom_histogram(fill="green",bins=30)+facet_wrap(~key,scales='free')
+
+```
+
+## Question 7
+
+Create base-`R` tables and `ggplot`-style bar charts for `Gender`, `Drugs`, and `Complications`. Employ faceting for the bar charts! (See the lecture notes for
+guidance on how to create bar charts, while noting that like above, the `x`
+value in the call to `aes()` is `value`.)
+
+(Ignore any warnings about "attributes are not identical...")
+
+```{r}
+# FILL ME IN
+df %>% select(.,Gender) %>% table(.)
+df %>% select(.,Drugs) %>% table(.)
+df %>% select(.,Complications) %>% table(.)
+#ggplot(data=df,mapping=aes(x=Gender)) + geom_bar(fill="seagreen")
+#ggplot(data=df,mapping=aes(x=Drugs)) + geom_bar(fill="seagreen")
+#ggplot(data=df,mapping=aes(x=Complications)) + geom_bar(fill="seagreen")
+df %>% select(.,Gender,Drugs,Complications) %>% gather(.) %>% ggplot(.,mapping=aes(x=value))+geom_bar(fill="magenta")+facet_wrap(~key,scales='free_x')
+```
+
+## Question 8
+
+Let's visualize `Drugs` and `Complications` at the same time. One way to do this is via a two-way table: simply pass both variable names to `table()` and see what happens. Such visualization can also be done in `ggplot` but it is considerably more complicated a task than we wish to tackle here.
+```{r}
+# FILL ME IN
+df %>% select(.,Drugs,Complications) %>% gather(.) %>% table(.)
+```
+
+## Question 9
+
+Let's assume that `Cost` is our response variable: ultimately we want to learn regression models that predict `Cost` given the values of the remaining (predictor) variables. (We'll actually carry this out later!) What we might want to do now is see how `Cost` varies as a function of other variables.
+
+First job: create side-by-side boxplots for `Cost` vs. `Gender`, `Cost` vs. `Drugs`, and `Cost` vs. `Complications`. As you might guess, we can do this via faceting,
+but it is a little more complicated. Just a little above, in the calls to
+`aes()`, the argument was `x=value`. Now that we have another variable, we need
+to add another argument: use `y=rep(df$Cost,3)`. This repeats the response vector
+three times, one time for each of the categorical predictors.
+
+To make the $y$-axis label look better, add on the following after `facet_wrap()`:
+`+ ylab("Log Cost")`.
+
+Do any of the categorical variables appear to be associated with the values of
+the response variable? (No need to write down an answer...just look and
+come to a conclusion.)
+
+```{r}
+# FILL ME IN
+df %>% select(.,Gender,Drugs,Complications) %>% gather(.) %>% ggplot(.,mapping=aes(x=value,y=rep(df$Cost,3)))+geom_boxplot(fill="orange")+facet_wrap(~key,scales='free_x')+ ylab("Log Cost")
+#The presence of Complications and Drugs seem to increase the cost significantly.
+```
+
+## Question 10
+
+Your next job: show scatter plots of `Cost` ($y$-axis) versus all the remaining predictor variables. As far as faceting...do what you did in Question 9, but
+replace `geom_boxplot()` with `geom_point()`.
+
+Note: when doing `select()`, make sure to take `Cost` out! We don't need to plot
+`Cost` vs. `Cost` here. Also, there are five quantitative predictor variables.
+
+Which quantitative predictors appear to be associated with the response variable?
+(Again, answer this to yourself, mentally.)
+
+```{r}
+# FILL ME IN
+df %>% select(.,-Cost,-Gender,-Drugs,-Complications)%>% gather(.) %>% ggplot(.,mapping=aes(x=value,y=rep(df$Cost,5)))+geom_point(col="deepskyblue")+facet_wrap(~key,scales='free')+ ylab("Log Cost")
+```
+
+## Question 11
+
+And your last job: visually determine the level of correlation (i.e., level of 
+linear dependence) between all the quantitative predictor variables. We didn't talk
+about this in lecture, so...
+
+First, install the package `corrplot`. Once that is done, uncomment the
+line `suppressMessages(library(corrplot))` below.
+
+Then, select the quantitative predictors (again, don't select `Cost`!) and
+pass the output from `select()` into `cor()` (no arguments, save the "."), and
+pass the output from `cor()` into `corrplot()` (first argument ".", and second
+argument `method="<something>"`...look at the documentation for choices...my
+preferred `"<something>"` is "ellipse").
+
+Why might apparent associations between predictor variables be bad, if you see any?
+We'll talk about this at length in a later lecture, but in short it would be 
+evidence of *multicollinearity*, which can affect your ability to interpret any
+models that you learn (particularly linear regression models).
+
+```{r}
+suppressMessages(library(corrplot))
+# FILL ME IN
+df %>% select(.,-Cost,-Gender,-Drugs,-Complications,-Duration)%>%cor(.)%>%corrplot(.,method="ellipse")
+```
+

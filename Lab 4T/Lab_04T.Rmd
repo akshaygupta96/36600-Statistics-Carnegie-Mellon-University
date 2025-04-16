@@ -1,0 +1,209 @@
+---
+title: "Lab: Unsupervised Learning I"
+author: "Akshay_Gupta_36-600_Lab_04T"
+output: 
+  html_document:
+    toc: no
+    toc_float: no
+    theme: spacelab
+---
+
+To answer the questions below, it will help you to refer to Sections 10.3 and 10.5 of ISLR; it might also help you to refer to your previous lab work (and, as always, to Google). 
+
+## Question 1
+
+Let's create a fake data frame with three rows and three columns:
+```{r}
+(df <- data.frame(x=1:3,y=1:3,z=1:3))
+```
+Computing *by hand*, what is the Euclidean distances between the fake datum of row 1 and the fake data of rows 2 and 3? And what is the Euclidean distance between the fake data of rows 2 and 3?
+```
+Row 1 & 2: √[(1-2)^2 + (1-2)^2 + (1-2)^2] = √3
+Row 1 & 3: √[(1-3)^2 + (1-3)^2 + (1-3)^2] = √12
+
+Row 2 & 3: √[(2-3)^2 + (2-3)^2 + (2-3)^2] = √3
+```
+
+## Question 2
+
+Now compute the Euclidean distances using the `dist()` function. Show the output from this function. Does that output match your hand-computed quantities? If not, go back and think re-do your calculation in Question 1. If so, then you now have a sense as to what the "distance between two data points" is, in practice. Note the appearance of the output: the distances are stored in a lower-triangular matrix.
+```{r}
+# FILL ME IN
+dist(df, method = "euclidean")
+```
+
+## Dataset 1
+
+Here we import some data on stars either in, or in the same general direction as, the Draco Dwarf Galaxy.
+```{r}
+file.path <- "https://raw.githubusercontent.com/pefreeman/36-290/master/EXAMPLE_DATASETS/DRACO/draco_photometry.Rdata"
+load(url(file.path))
+df <- data.frame(ra,dec,"v"=velocity.los,log.g,"g"=mag.g,"r"=mag.r,"i"=mag.i)
+rm(file.path,ra,dec,velocity.los,log.g,temperature,mag.u,mag.g,mag.r,mag.i,mag.z,metallicity,signal.noise)
+```
+
+`df` is a data frame with 2778 rows and 7 columns. See this [README file](https://github.com/pefreeman/36-290/tree/master/EXAMPLE_DATASETS/DRACO) for a full description of the data and its variables.
+
+## Question 3
+
+Use `dplyr` functions to filter the data frame such that it only contains values of `dec` &gt; 56, values of `ra` &lt; 264, and values of `v` between -350 and -250. (Put a space between the "<" and the "-" when you filter on the latter velocity, otherwise `R` will see the assignment operator and act accordingly.) Mutate the data frame to have g-r and r-i colors (call them `gr` and `ri`), then delete the magnitudes and `v`. (Pro tip: you can "negatively select" columns by putting minus signs in front of the column names.) Save the resulting data frame as `df.new`.
+```{r}
+suppressMessages(library(tidyverse))
+# FILL ME IN
+dim(df)
+df = df %>% filter(.,dec>56, ra<264, v> -350 & v< -250)
+dim(df)
+```
+
+## Question 4
+
+Use the `kmeans()` function to cluster the data in your data frame. Try different values for $k$, and finally display results for what *you* would choose as its optimal value. The default for `nstart` is 1; that should be increased to something larger...play with the values for this argument.
+
+Install the package `GGally` and uncomment the library-loading line below. Then
+display your results using the `ggpairs()` function; for example, use
+```
+ggpairs(df.new,progress=FALSE,mapping=aes(color=factor(km2.out$cluster)))
+```
+where `km2.out` is what I call the output from `kmeans()` for $k = 2$.
+
+Remember to `scale()` your data when you call `kmeans()` (but not when plotting)! Also, note that `kmeans()` utilizes random sampling, so you should absolutely set a random number seed immediately before calling `kmeans()` to ensure reproducibility.
+```{r}
+suppressMessages(library(GGally))
+# FILL ME IN
+k=4
+km2.out <- kmeans(scale(df),k,nstart=20)
+ggpairs(df,progress=FALSE,mapping=aes(color=factor(km2.out$cluster)))
+```
+
+## Question 5
+
+For your chosen $k$ value, what are the number of groups and the number of data in each group? Also, what is ratio of the between-cluster sum-of-squares to the total sum-of-squares? (This is a measure of the total variance in the data that is "explained" by clustering. Higher values [closer to 100%] are better, but beware: the larger the value of $K$, the higher the ratio is going to be: you will be getting into the realm of overfitting.) (Hint: `print()` your saved output from `kmeans()`.)
+
+```{r}
+# FILL ME IN
+print(km2.out)
+```
+```
+FILL ME IN WITH TEXT
+```
+
+## Question 6
+
+Now utilize one of the methods presented in class for determining the optimal value of $k$, while noting that some methods provide more concrete results than others.
+```{r}
+# FILL ME IN
+wss <- rep(NA,10)
+for ( ii in 1:10 ) {
+  km.out <- kmeans(scale(df),ii,nstart=20)
+  wss[ii] <- km.out$tot.withinss;
+}
+df.plot <- data.frame("k"=1:10,wss)
+ggplot(data=df.plot,mapping=aes(x=k,y=wss)) +
+  geom_point(col="orange") +
+  geom_line(col="orange") +
+  ylab("Within-Cluster Sum-of-Squares")
+
+library(cluster)
+ss <- rep(NA,10)
+for ( ii in 2:10 ) {
+  km.out <- kmeans(scale(df),ii,nstart=20)
+  ss[ii] <- mean(silhouette(km.out$cluster,
+                            dist(scale(df)))[,3])
+}
+df.plot <- data.frame("k"=2:10,"ss"=ss[2:10])
+ggplot(data=df.plot,mapping=aes(x=k,y=ss)) +
+  geom_point(col="purple") +
+  geom_line(col="purple") +
+  ylab("Average Silhouette")
+```
+
+## Dataset 2
+
+## Question 7
+
+Now input the diamonds dataset (`diamonds.csv`); download it from the `DATA` directory on `Canvas`. Once the data frame is input (be sure to use the argument
+`stringsAsFactors=TRUE`, by the way), remove the columns `X`, `cut`, `color`, and `clarity` from it, and call the resulting data frame `df.new`.
+
+```{r}
+# FILL ME IN
+df <- read.csv("diamonds.csv", stringsAsFactors=TRUE)
+#head(df)
+df.new <- df %>% select(., select = -X, -cut, -color, -clarity)
+#head(df.new)
+```
+
+## Question 8
+
+The diamonds dataset is too large to input into $K$-means as is. (I have discovered this myself, to my sorrow!) So we will randomly select 1000 rows from the data frame and work with those. First, run this code (while noting that you can change the seed to whatever you like):
+```
+set.seed(303)
+s <- sort(sample(nrow(df.new),1000))
+```
+Then utilize the `slice()` function from `dplyr` to select the rows recorded in the vector `s`, and save the output to `df.small`.
+
+```{r}
+# FILL ME IN
+set.seed(117)
+s <- sort(sample(nrow(df.new),1000))
+df.small <- df.new %>% slice(.,s)
+#nrow(df.small)
+```
+
+## Question 9
+
+Now we can do $K$-means. But we'll do things a little differently this time: here, 
+just run `clusGap()` directly with `K.max=8` and plot the output with `fviz_gap_stat()`. Keep that value in mind for the next question below.
+```{r}
+# FILL ME IN
+suppressMessages(library(factoextra))
+gs <- clusGap(scale(df.small), FUN=kmeans, K.max=8)
+fviz_gap_stat(gs)
+```
+
+## Question 10
+
+In Question 4, we explored using different values of $k$, and through the use of `ggpairs()` we determined that for the stellar data, $k$ should be 2 or 3. In Question 9, on the other hand, we let the gap statistic function determine the optimal value for $k$...and now here we will use `ggpairs()` to visualize the results of assuming this optimal value only. Do this below.
+
+You need not state an answer to this question, but: does it appear that there are natural clusters in the data that were uncovered using $K$-means, or does it appear that the data were simply split into pieces? (Look at, e.g., `price` versus `carat`; that scatter plot *might* influence your thinking. Note that there not necessarily a right answer here. Interpretation, meet ambiguity.)
+```{r}
+# FILL ME IN
+suppressMessages(library(GGally))
+#dim(df.new)
+k <- 6
+km2.out <- kmeans(scale(df.new),k,nstart=20)
+df.new$cluster <- as.factor(km2.out$cluster)
+
+ggpairs(df.new,progress=FALSE,mapping = aes(color = cluster))
+ggplot(df.new, aes(x = carat, y = price)) + geom_point(col="skyblue")
+```
+
+## Question 11
+
+Read in the file `diamonds.csv` again, using `read.csv()` with the argument `stringsAsFactors=TRUE`, but do *not* remove any columns. However, do select 1000 rows again. Here we will examine these data with the $K$-prototypes algorithm.
+
+Install the package `clustMixType`, then load it into `R` via a call to the `library()` function (uncomment the line below). Then run the function `validation_kproto()`. (To figure out how to run it, go to the help page for the function and scroll down to the examples. Use the silhouette method, set the data to `df.small` [your 1000-row subset of `df`], set `k` to 2:5, and set `nstart` to 5. Add one more argument: `verbose=FALSE`. Do not save your output to a variable...just let `validation_kproto()` output directly to your screen.) Examine the output. `indices` is the silhouette score for each value of $K$. What is the optimal number of clusters?
+```{r}
+library(clustMixType)
+# FILL ME IN
+df <- read.csv("diamonds.csv", stringsAsFactors=TRUE)
+set.seed(117)
+s <- sort(sample(nrow(df.new),1000))
+df.small <- df %>% slice(.,s)
+validation_kproto(df.small, method = "silhouette", object = NULL, k=2:5, nstart=5,verbose=FALSE)
+```
+```
+The optimal value of k/number of clusters is 2.
+```
+
+## Question 12
+
+As a last exercise, run
+```
+kp.out <- kproto(df.small,[# OF CLUSTERS],nstart=5,verbose=FALSE)
+```
+and then plot the output: `plot(kp.out)`. For optimal results, do not run this code chunk separately, but knit the file and then look at the plots at the end of the output. You need not comment on these plots, but you should realize that they show the values of each variable for each cluster, and thus they would help you construct a story about how the clusters differ. For instance, I find that the `X` variable values differ greatly between clusters, among other variable values.
+```{r}
+# FILL ME IN
+kp.out <- kproto(df.small,k=2,nstart=5,verbose=FALSE)
+plot(kp.out)
+```
